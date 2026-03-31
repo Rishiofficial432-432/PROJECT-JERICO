@@ -21,6 +21,7 @@ data/
 models/*.pth
 models/*.pt
 models/*.onnx
+!models/best_anomaly_model.pth
 
 # Logs and Databases
 logs/
