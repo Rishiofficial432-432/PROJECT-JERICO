@@ -12,11 +12,16 @@ class SceneAnalyzer:
     def __init__(self):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.categories = [
-            "a car crash or traffic collision",
-            "a violent street fight or physical assault",
-            "an armed robbery, theft, or burglary",
-            "normal peaceful street environment",
-            "people walking and interacting normally"
+            "a person looking around suspiciously and nervously",
+            "a person hiding their face with a mask, hoodie, or hand",
+            "a violent street fight, physical assault, or shoving",
+            "an armed robbery, theft, or burglary in progress",
+            "a person holding a knife, gun, or dangerous weapon",
+            "a person casing a building or checking door handles",
+            "a person running away in a state of panic or guilt",
+            "a person loitering, crouching, or lurking in shadows",
+            "normal peaceful street environment with calm people",
+            "people walking, talking, and interacting normally"
         ]
         
         if CLIPModel is not None:

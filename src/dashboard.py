@@ -22,6 +22,15 @@ scene_analyzer = get_scene_analyzer()
 st.set_page_config(page_title="CCTV Human Verification Dashboard", layout="wide")
 
 st.title("🛡️ Human Verification Dashboard")
+
+# --- Model Status Info ---
+weight_path = "models/best_anomaly_model.pth"
+last_update = "Never"
+if os.path.exists(weight_path):
+    mtime = os.path.getmtime(weight_path)
+    last_update = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(mtime))
+
+st.markdown(f"**Current Model State:** Trained up to `{last_update}` (Epoch ~{619 if '619' in last_update else 'Updating...'})")
 st.markdown("Upload CCTV footage to run the anomaly detection models and review alerts.")
 
 # --- Settings Sidebar ---
@@ -32,9 +41,11 @@ smart_mode = st.sidebar.toggle("🤖 Enable Smart Auto-Config", value=False, hel
 if not smart_mode:
     conf_threshold = st.sidebar.slider("Minimum Confidence Score", min_value=0.0, max_value=1.0, value=0.60, step=0.05)
     anomaly_threshold = st.sidebar.slider("Anomaly Violence Trigger", min_value=0.0, max_value=1.0, value=0.75, step=0.05)
+    scene_threshold = st.sidebar.slider("Scene Confidence (CLIP)", min_value=0.0, max_value=1.0, value=0.85, step=0.05)
 else:
     conf_threshold = 0.60
     anomaly_threshold = 0.70
+    scene_threshold = 0.80
     st.sidebar.success("**Smart Config Active**\n\nThe intelligent recognition system is utilizing standard parameters for unified detection.")
 
 show_boxes = st.sidebar.toggle("Show Bounding Boxes", value=True)
@@ -46,6 +57,12 @@ cam_lat = st.sidebar.number_input("Latitude", value=40.7128, format="%.6f")
 cam_lon = st.sidebar.number_input("Longitude", value=-74.0060, format="%.6f")
 
 active_geo_location = {"lat": cam_lat, "lon": cam_lon, "name": cam_name}
+st.sidebar.markdown("---")
+st.sidebar.subheader("🧠 Model Synchronization")
+if st.sidebar.button("🔄 Reload Model Weights", help="Forces the dashboard to load the newest .pth file from the training process."):
+    st.cache_resource.clear()
+    st.rerun()
+st.sidebar.caption(f"Last Weights Found: {last_update}")
 st.sidebar.markdown("---")
 # ------------------------
 
@@ -93,6 +110,10 @@ if uploaded_file is not None:
     
     # Simple centroid motion tracker
     prev_centroids = []
+    
+    # Behavioral Smoothing Buffers
+    scene_history = []  # Stores recent [category, prob] pairs
+    MAX_HISTORY = 10    # About 5 seconds of scene context
 
     while cap.isOpened():
         ret, frame = cap.read()
@@ -112,19 +133,35 @@ if uploaded_file is not None:
         violence_detected = anomaly_score >= anomaly_threshold
         
         # --- 2. UNIVERSAL ZERO-SHOT SCENE UNDERSTANDING ---
-        if frame_idx % 15 == 0:  # Sample twice a second
+        if frame_idx > 0 and frame_idx % 15 == 0:  # Sample twice a second, skip frame 0
             scene_type, scene_prob = scene_analyzer.analyze_frame(frame)
-            is_universal_threat = scene_prob > 0.60 and any(kw in scene_type for kw in ["crash", "fight", "robbery", "assault"])
+            
+            # Update history and keep it within window
+            scene_history.append((scene_type, scene_prob))
+            if len(scene_history) > MAX_HISTORY:
+                scene_history.pop(0)
+
+            # Consensus logic: Is there a consistent threat across history?
+            threat_keywords = ["suspiciously", "hiding", "fight", "robbery", "weapon", "casing", "panic", "lurking"]
+            recent_threats = [p for t, p in scene_history if any(kw in t for kw in threat_keywords) and p > scene_threshold]
+            
+            # Universal threat: High-conf consensus across the rolling window
+            is_universal_threat = len(recent_threats) >= 2 # At least 2 suspicious checks in a row
             
             if is_universal_threat:
                 # Trigger exact emergency service responses
                 st.session_state.current_dispatch = dispatch_authorities(scene_type, scene_prob, active_geo_location)
-                violence_detected = True # Universal override
                 st.session_state.univ_override = True # Keep state for in-between frames
-            elif frame_idx % 150 == 0:
-                # Clear dispatch box if safe for a few seconds
-                st.session_state.current_dispatch = None
-                st.session_state.univ_override = False
+                st.session_state.safe_counter = 0 # Reset clear timer
+            else:
+                # Increment safe counter for every negative CLIP check
+                st.session_state.safe_counter = getattr(st.session_state, 'safe_counter', 0) + 1
+                
+        # Clear CLIP overlay if no threat seen for 3 checks (~1.5s total)
+        if getattr(st.session_state, 'safe_counter', 0) >= 3:
+            st.session_state.current_dispatch = None
+            st.session_state.univ_override = False
+            scene_history = [] # Reset history when safe
                 
         if getattr(st.session_state, 'univ_override', False):
             violence_detected = True
@@ -189,7 +226,7 @@ if uploaded_file is not None:
 
         # Convert BGR to RGB for Streamlit
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        stframe.image(frame_rgb, channels="RGB", use_container_width=True)
+        stframe.image(frame_rgb, channels="RGB", width="stretch")
         
         # --- 4. UI ALERTS (Anti-Flickering Logic) ---
         metric_color = "normal" if not violence_detected else "inverse"
@@ -230,7 +267,7 @@ else:
     # Placeholder UI when waiting
     col1, col2 = st.columns([2, 1])
     with col1:
-        st.image("https://via.placeholder.com/640x480.png?text=Waiting+for+video+upload...", use_container_width=True)
+        st.image("https://via.placeholder.com/640x480.png?text=Waiting+for+video+upload...", width="stretch")
     with col2:
         st.subheader("Event Details")
         st.write("**Threat Type:** None")
