@@ -2,11 +2,14 @@ import torch
 import cv2
 from PIL import Image
 import sys
+import logging
 
 try:
     from transformers import CLIPProcessor, CLIPModel
 except ImportError:
     CLIPProcessor, CLIPModel = None, None
+
+logger = logging.getLogger(__name__)
 
 class SceneAnalyzer:
     def __init__(self):
@@ -32,17 +35,22 @@ class SceneAnalyzer:
             
     def analyze_frame(self, frame):
         if self.model is None:
+            logger.warning("CLIP model not installed. Enable scene understanding via: pip install transformers")
             return "model_not_installed", 0.0
-            
-        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        image = Image.fromarray(rgb_frame)
         
-        inputs = self.processor(text=self.categories, images=image, return_tensors="pt", padding=True).to(self.device)
-        
-        with torch.no_grad():
-            outputs = self.model(**inputs)
-            logits_per_image = outputs.logits_per_image
-            probs = logits_per_image.softmax(dim=1).cpu().numpy()[0]
+        try:
+            rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            image = Image.fromarray(rgb_frame)
             
-        max_idx = probs.argmax()
-        return self.categories[max_idx], probs[max_idx]
+            inputs = self.processor(text=self.categories, images=image, return_tensors="pt", padding=True).to(self.device)
+            
+            with torch.no_grad():
+                outputs = self.model(**inputs)
+                logits_per_image = outputs.logits_per_image
+                probs = logits_per_image.softmax(dim=1).cpu().numpy()[0]
+                
+            max_idx = probs.argmax()
+            return self.categories[max_idx], probs[max_idx]
+        except Exception as e:
+            logger.error(f"Scene analysis failed: {e}")
+            return "analysis_error", 0.0

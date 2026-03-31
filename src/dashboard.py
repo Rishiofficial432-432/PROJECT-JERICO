@@ -3,21 +3,43 @@ import cv2
 import tempfile
 import time
 import os
+import logging
 from detect import run_inference
 from detect_anomaly import load_anomaly_model, lookup_features, predict_anomaly
 from scene_understanding import SceneAnalyzer
 from alert import dispatch_authorities
 
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 @st.cache_resource
 def get_anomaly_brain():
-    return load_anomaly_model()
+    try:
+        return load_anomaly_model()
+    except Exception as e:
+        logger.error(f"Failed to load anomaly model: {e}")
+        st.error(f"⚠️ Anomaly Model Load Error: {e}")
+        return None, None
 
 @st.cache_resource
 def get_scene_analyzer():
-    return SceneAnalyzer()
+    try:
+        return SceneAnalyzer()
+    except Exception as e:
+        logger.error(f"Failed to initialize scene analyzer: {e}")
+        return None
 
-anomaly_model, device = get_anomaly_brain()
-scene_analyzer = get_scene_analyzer()
+try:
+    anomaly_model, device = get_anomaly_brain()
+except Exception as e:
+    anomaly_model, device = None, None
+    logger.error(f"Critical initialization error: {e}")
+
+try:
+    scene_analyzer = get_scene_analyzer()
+except Exception as e:
+    scene_analyzer = None
+    logger.error(f"Scene analyzer initialization warning: {e}")
 
 st.set_page_config(page_title="CCTV Human Verification Dashboard", layout="wide")
 
@@ -25,12 +47,15 @@ st.title("🛡️ Human Verification Dashboard")
 
 # --- Model Status Info ---
 weight_path = "models/best_anomaly_model.pth"
-last_update = "Never"
+last_update = "Never Trained"
 if os.path.exists(weight_path):
     mtime = os.path.getmtime(weight_path)
     last_update = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(mtime))
 
-st.markdown(f"**Current Model State:** Trained up to `{last_update}` (Epoch ~{619 if '619' in last_update else 'Updating...'})")
+status_emoji = "✅" if anomaly_model is not None else "⚠️"
+st.markdown(f"**{status_emoji} Current Model State:** Trained up to `{last_update}`")
+if anomaly_model is None:
+    st.warning("⚠️ Anomaly detection model not loaded. Ensure DATASET/ folder exists and training has completed.")
 st.markdown("Upload CCTV footage to run the anomaly detection models and review alerts.")
 
 # --- Settings Sidebar ---
@@ -69,6 +94,10 @@ st.sidebar.markdown("---")
 uploaded_file = st.file_uploader("Upload Video (MP4/AVI)", type=["mp4", "avi", "mov"])
 
 if uploaded_file is not None:
+    if anomaly_model is None or device is None:
+        st.error("❌ Cannot process video: Anomaly model failed to load. Please check logs and restart.")
+        st.stop()
+    
     st.success("Video uploaded successfully!")
     tfile = tempfile.NamedTemporaryFile(delete=False, suffix=".mp4")
     tfile.write(uploaded_file.read())
@@ -82,7 +111,12 @@ if uploaded_file is not None:
     
     if feature_path:
         st.toast(f"Matched UCF Dataset Features: {os.path.basename(feature_path)}", icon="✅")
-        segment_scores = predict_anomaly(feature_path, anomaly_model, device)
+        try:
+            segment_scores = predict_anomaly(feature_path, anomaly_model, device)
+        except Exception as e:
+            logger.error(f"Anomaly prediction failed: {e}")
+            st.error(f"Failed to predict anomaly: {e}")
+            segment_scores = None
     else:
         st.toast(f"Starting Universal Zero-Shot Classifier for {uploaded_file.name}...", icon="🌐")
         

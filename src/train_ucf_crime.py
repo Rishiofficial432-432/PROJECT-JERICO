@@ -171,6 +171,30 @@ def train_model():
     anomaly_list = os.path.join(dataset_dir, "Anomaly_Train.txt")
     normal_list = os.path.join(dataset_dir, "Normal_Train.txt")
     
+    # Validate dataset structure
+    if not os.path.exists(dataset_dir):
+        print(f"\n❌ ERROR: Dataset directory '{dataset_dir}' not found!")
+        print(f"📥 Place UCF-Crime C3D features in: {os.path.abspath(dataset_dir)}/")
+        print(f"Expected structure:")
+        print(f"   DATASET/")
+        print(f"   ├── Anomaly_Train.txt")
+        print(f"   ├── Normal_Train.txt")
+        print(f"   └── Features/")
+        print(f"       ├── Abuse/")
+        print(f"       ├── Fighting/")
+        print(f"       └── ... (other categories)")
+        return
+    
+    if not os.path.exists(anomaly_list):
+        print(f"❌ ERROR: {anomaly_list} not found!")
+        print(f"Please ensure Anomaly_Train.txt exists in the DATASET folder.")
+        return
+    
+    if not os.path.exists(normal_list):
+        print(f"❌ ERROR: {normal_list} not found!")
+        print(f"Please ensure Normal_Train.txt exists in the DATASET folder.")
+        return
+    
     # Automatically switch to GPU if available
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"=========================================")
@@ -182,8 +206,19 @@ def train_model():
     neg_dataset = UCFCrimeFeatureDataset(dataset_dir, normal_list, is_anomaly=False)
     
     if len(pos_dataset) == 0 and len(neg_dataset) == 0:
-        print("Error: Could not find feature text files matching the Anomaly_Train.txt/Normal_Train.txt indices.")
+        print("\n❌ ERROR: Could not find any feature files!")
+        print(f"Expected C3D feature .txt files in: {os.path.abspath(dataset_dir)}/Features/")
+        print(f"✅ SOLUTION:")
+        print(f"1. Download UCF-Crime C3D features from Kaggle:")
+        print(f"   https://www.kaggle.com/datasets/odins0n/ucf-crime-dataset")
+        print(f"2. Extract Features/ folder into: {os.path.abspath(dataset_dir)}/Features/")
+        print(f"3. Ensure Anomaly_Train.txt and Normal_Train.txt list video names correctly")
         return
+    
+    if len(pos_dataset) == 0:
+        print(f"\n⚠️  WARNING: No anomaly features found. Loaded {len(neg_dataset)} normal videos.")
+    elif len(neg_dataset) == 0:
+        print(f"\n⚠️  WARNING: No normal features found. Loaded {len(pos_dataset)} anomaly videos.")
 
     full_dataset = torch.utils.data.ConcatDataset([pos_dataset, neg_dataset])
     dataloader = DataLoader(full_dataset, batch_size=32, shuffle=True, collate_fn=generate_batch, drop_last=False)
