@@ -1,0 +1,9 @@
+numpy
+torch
+onnx
+opencv-python
+streamlit
+transformers
+ultralytics
+tqdm
+pillow
