@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="420" viewBox="0 0 1280 420" role="img" aria-label="Jerico pipeline diagram">
+  <rect width="1280" height="420" fill="#f7fbfd"/>
+  <text x="40" y="52" fill="#0d2a3a" font-family="Segoe UI, Arial, sans-serif" font-size="34" font-weight="700">Detection Pipeline</text>
+
+  <g font-family="Segoe UI, Arial, sans-serif" font-size="20" font-weight="600" fill="#11364b">
+    <rect x="40" y="120" width="210" height="90" rx="12" fill="#d9f0ff" stroke="#4faed8"/>
+    <text x="72" y="173">Media Upload</text>
+
+    <rect x="290" y="120" width="220" height="90" rx="12" fill="#dff8ec" stroke="#4bbf8a"/>
+    <text x="333" y="173">Frame Sampling</text>
+
+    <rect x="550" y="80" width="300" height="90" rx="12" fill="#fff3d8" stroke="#e2b85f"/>
+    <text x="628" y="133">YOLO Detect</text>
+
+    <rect x="550" y="200" width="300" height="90" rx="12" fill="#ffe6e6" stroke="#dd8f8f"/>
+    <text x="600" y="253">MIL Anomaly Score</text>
+
+    <rect x="890" y="80" width="330" height="90" rx="12" fill="#ece8ff" stroke="#9a89dc"/>
+    <text x="962" y="133">Scene Analysis</text>
+
+    <rect x="890" y="200" width="330" height="90" rx="12" fill="#e7f6ff" stroke="#6aa9d0"/>
+    <text x="956" y="253">Threat Fusion Logic</text>
+
+    <rect x="470" y="320" width="350" height="70" rx="12" fill="#0f2d40"/>
+    <text x="544" y="364" fill="#ffffff">Alert + Dispatch + Siren</text>
+  </g>
+
+  <g stroke="#3e7fa0" stroke-width="3" fill="none" marker-end="url(#arrow)">
+    <path d="M250 165 L290 165"/>
+    <path d="M510 165 L550 125"/>
+    <path d="M510 165 L550 245"/>
+    <path d="M850 125 L890 125"/>
+    <path d="M850 245 L890 245"/>
+    <path d="M1055 170 L1055 200"/>
+    <path d="M1055 290 L645 320"/>
+  </g>
+
+  <defs>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M0,0 L12,6 L0,12 z" fill="#3e7fa0"/>
+    </marker>
+  </defs>
+</svg>

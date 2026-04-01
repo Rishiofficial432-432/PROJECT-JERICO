@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-label="Dashboard preview placeholder">
+  <rect width="1280" height="720" fill="#eef5f9"/>
+  <rect x="24" y="24" width="1232" height="672" rx="16" fill="#ffffff" stroke="#d2e1ea"/>
+  <rect x="24" y="24" width="1232" height="72" rx="16" fill="#0f2d40"/>
+  <text x="50" y="70" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif" font-size="30" font-weight="700">Project Jerico Dashboard Preview</text>
+
+  <rect x="60" y="130" width="820" height="470" rx="12" fill="#e8f2f8" stroke="#c6dceb"/>
+  <text x="335" y="370" fill="#4b6a7c" font-family="Segoe UI, Arial, sans-serif" font-size="30" font-weight="600">Live Frame Stream</text>
+
+  <rect x="910" y="130" width="310" height="470" rx="12" fill="#f9fcff" stroke="#c6dceb"/>
+  <rect x="930" y="160" width="270" height="48" rx="8" fill="#ffebee"/>
+  <text x="955" y="192" fill="#9c1f1f" font-family="Segoe UI, Arial, sans-serif" font-size="20" font-weight="700">Critical Threat</text>
+
+  <rect x="930" y="230" width="270" height="20" rx="8" fill="#d9e8f2"/>
+  <rect x="930" y="262" width="230" height="20" rx="8" fill="#d9e8f2"/>
+  <rect x="930" y="294" width="250" height="20" rx="8" fill="#d9e8f2"/>
+  <rect x="930" y="326" width="210" height="20" rx="8" fill="#d9e8f2"/>
+
+  <rect x="930" y="390" width="130" height="36" rx="18" fill="#1f7a4f"/>
+  <text x="963" y="414" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif" font-size="16" font-weight="700">SAFE</text>
+
+  <rect x="1070" y="390" width="130" height="36" rx="18" fill="#b22c2c"/>
+  <text x="1094" y="414" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif" font-size="16" font-weight="700">ALERT</text>
+</svg>

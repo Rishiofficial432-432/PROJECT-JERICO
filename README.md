@@ -272,4 +272,3 @@ DATASET/
 ## Deliverable Scope
 
 Project Jerico delivers an operational AI surveillance dashboard for threat analytics, alert visualization, and dispatch support suitable for pilot deployments, demonstrations, and security workflow integration. It is structured to support staged rollout, model iteration, and enterprise-facing presentations where clarity of architecture and decision flow is essential.
-\

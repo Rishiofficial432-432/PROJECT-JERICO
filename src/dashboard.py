@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import cv2
 import tempfile
 import time
@@ -8,11 +9,32 @@ import numpy as np
 from detect import run_inference, CLASS_WEAPON, CLASS_PERSON
 from detect_anomaly import load_anomaly_model, lookup_features, predict_anomaly
 from scene_understanding import SceneAnalyzer
-from alert import dispatch_authorities, generate_siren_audio
-import scipy.io.wavfile as wavfile
+from alert import dispatch_authorities
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+def play_siren_js():
+    components.html(
+        """
+        <script>
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.type = 'sawtooth';
+        gain.gain.setValueAtTime(0.4, ctx.currentTime);
+        for (let i = 0; i < 6; i++) {
+            osc.frequency.setValueAtTime(i % 2 === 0 ? 800 : 1200, ctx.currentTime + i * 0.5);
+        }
+        osc.start(ctx.currentTime);
+        osc.stop(ctx.currentTime + 3);
+        </script>
+        """,
+        height=0,
+    )
 
 @st.cache_resource
 def get_anomaly_brain():
@@ -189,10 +211,7 @@ if uploaded_file is not None:
                 
                 # Play siren
                 try:
-                    siren_audio = generate_siren_audio(duration=2)
-                    siren_path = "/tmp/siren_image.wav"
-                    wavfile.write(siren_path, 44100, (siren_audio * 32767).astype(np.int16))
-                    st.audio(siren_path, format="audio/wav", autoplay=True)
+                    play_siren_js()
                 except Exception as e:
                     logger.error(f"Failed to generate siren: {e}")
             else:
@@ -404,10 +423,7 @@ if uploaded_file is not None:
                     }
                     
                     try:
-                        siren_audio = generate_siren_audio(duration=2)
-                        siren_path = "/tmp/siren.wav"
-                        wavfile.write(siren_path, 44100, (siren_audio * 32767).astype(np.int16))
-                        st.audio(siren_path, format="audio/wav", autoplay=True)
+                        play_siren_js()
                     except Exception as e:
                         logger.error(f"Failed to generate siren: {e}")
             else:
