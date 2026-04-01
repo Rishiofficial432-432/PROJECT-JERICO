@@ -1,48 +1,245 @@
-# Project Jerico: Intelligent CCTV Security System 🛡️
+# Project Jerico
 
-## 📖 The Idea (What & Why)
-Project Jerico is a **Human-in-the-Loop CCTV Security & Anomaly Detection System**. It continuously ingests realtime CCTV feeds, analyzes the frames for anomalies (weapons, loitering, burglary, fighting, etc.), and surfaces potential threats to a localized dashboard. 
+Human-in-the-loop CCTV threat analytics combining object detection, scene understanding, and MIL-based anomaly scoring.
 
-The core philosophy of this project is **Validate First, Alert Later.** Instead of auto-dialing emergency services based on AI output, the system routes high-confidence anomalies to a Streamlit-based web dashboard. A human security operative verifies the clip and clicks "Confirm" to escalate the alert, or "Deny" to log the event as a false positive and use it for future model retraining.
+## Overview
 
-## 🛠️ How We Built It
-The system revolves around machine learning pipelines designed for both frame-level and video-level context:
-1. **Real-time Object Detection:** Built to scan individual frames for specific objects like weapons or abandoned items using bounding-box inference. 
-2. **Video Anomaly Detection (UCF-Crime MIL Model):** A deep learning pipeline that analyzes temporal video features using Multiple Instance Learning (MIL) to identify complex anomalous behavior (like theft or fights) across sequences of frames.
+Project Jerico is a Streamlit dashboard for analyzing uploaded video or image evidence and surfacing high-risk events.
 
-### Libraries & Tech Stack
-- **PyTorch & NumPy**: The backbone for defining the 3-layer MLP network, custom dataloaders, computing the MIL ranking loss, and managing tensor operations on the GPU.
-- **OpenCV**: Used in `ingest.py` to capture, decode, and resize RTSP/HTTP video streams directly from CCTV hardware.
-- **Streamlit**: Powers `dashboard.py` to seamlessly create a lightweight, responsive web UI for the human verification loop.
-- **ONNX**: Intended for converting internal weights into a universal format to speed up inference on low-end hardware.
+The system combines three signals:
 
-## 📂 Repository Structure
+1. Object detection (person and weapon detection via YOLO)
+2. Video anomaly scoring (MIL model over UCF-Crime style 32-segment features)
+3. Scene-level semantic context (CLIP text-image matching)
+
+When risk is detected, the dashboard renders a critical alert, synthesizes siren audio, and generates a structured dispatch message with geolocation details.
+
+## Core Features
+
+1. Upload and process both images and videos
+2. Dual detection flow:
+	 - Real-time frame object detection
+	 - Segment-level anomaly probability from pre-extracted features
+3. CLIP-based scene interpretation for contextual threat cues
+4. Behavioral smoothing and motion heuristics to reduce alert flicker
+5. Geo-tagged dispatch message generation with maps deep link
+6. Streamlit controls for confidence thresholds and display options
+
+## Tech Stack
+
+- Python 3.x
+- Streamlit
+- OpenCV
+- PyTorch
+- Ultralytics YOLO
+- Transformers (CLIP)
+- NumPy
+
+## Current Project Structure
+
 ```text
-PROJECT JERICO/
-│
-├── DATASET/                  # UCF-Crime dataset (Features, Anomaly/Normal text splits)
-├── data/                     # Your localized CCTV footage splits (train/val/test)
-├── models/                   # Saved model weights (best_anomaly_model.pth, checkpoint.pth)
-├── logs/                     # Databases and logs tracking false positive denials
-│
-├── src/
-│   ├── train_ucf_crime.py    # PyTorch MIL ranking script to train the anomaly model on your GPU
-│   ├── ingest.py             # Captures CCTV stream using OpenCV 
-│   ├── detect.py             # Runs real-time inference on ingested frames
-│   ├── detect_anomaly.py     # Aggregates temporal features for video-level anomaly checking
-│   ├── scene_understanding.py# High-level environmental context parsing
-│   ├── threat_logic.py       # Threshold engine (e.g. confidence > 85% -> trigger alert)
-│   ├── dashboard.py          # The Streamlit web UI for human verification
-│   └── alert.py              # Handles webhook/email escalation upon human confirmation
-│
-├── requirements.txt          # Python dependencies (NumPy, PyTorch, Streamlit, OpenCV)
-├── run.bat / run.sh          # One-click startup scripts for the dashboard
-└── README.md                 # Project documentation
+PROJECT-JERICO-main/
+├── CHANGES.md
+├── DATASET_SETUP.md
+├── README.md
+├── SETUP_GUIDE.md
+├── config.py
+├── launcher_utility.py
+├── requirements.txt
+├── run.bat
+├── run.sh
+├── yolov8n.pt
+├── models/
+│   ├── best_anomaly_model.pth
+│   └── gun_bestweight.pt
+└── src/
+		├── alert.py
+		├── dashboard.py
+		├── detect.py
+		├── detect_anomaly.py
+		├── ingest.py
+		├── scene_understanding.py
+		├── threat_logic.py
+		└── train_ucf_crime.py
 ```
 
-## 🧠 How Training is Going
-The core anomaly detection engine is currently training on the vast **UCF-Crime** dataset using **Multiple Instance Learning (MIL)**.
-- **Feature Extraction**: Instead of training on raw video pixels from scratch, the network learns from pre-extracted 4096-dimensional C3D spatial-temporal features. Each video is divided into 32 equal segments.
-- **The Objective Component**: The network uses a custom Ranking Loss formula. It ensures that the highest anomaly score within an "anomalous" bag (video) is strictly greater than the highest score in a "normal" bag. It is also regularized by sparsity (anomalies are rare) and temporal smoothness (anomalies don't jump erratically between frames).
-- **Compute Setup**: Training is executed directly on the localized NVIDIA GPU (`cuda:0`).
-- **Resiliency**: The training script (`src/train_ucf_crime.py`) features robust auto-resume mechanics. It constantly updates `models/checkpoint.pth` (saving the epoch, optimizer state, and current loss parameters), ensuring that if the terminal closes, training simply picks up exactly where it left off on the next run.
+## Module Guide
+
+- src/dashboard.py
+	- Main Streamlit app
+	- Handles upload, frame loop, UI, alert state, and siren playback
+
+- src/detect.py
+	- Loads YOLO models and returns person/weapon detections
+
+- src/detect_anomaly.py
+	- Loads MIL model weights and predicts segment anomaly scores from .txt features
+
+- src/scene_understanding.py
+	- CLIP-based natural language scene categorization
+
+- src/alert.py
+	- Dispatch message builder and siren waveform generator
+
+- src/train_ucf_crime.py
+	- MIL training loop with checkpoint resume support
+
+- src/ingest.py
+	- Basic stream reader utility (camera/RTSP scaffold)
+
+## Installation
+
+1. Create and activate a virtual environment
+
+macOS/Linux:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+```
+
+Windows (PowerShell):
+
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+```
+
+2. Install dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+If needed, install any missing package explicitly:
+
+```bash
+pip install torch opencv-python streamlit ultralytics transformers tqdm
+```
+
+## Running the Dashboard
+
+Preferred command:
+
+```bash
+streamlit run src/dashboard.py
+```
+
+Then open the URL shown by Streamlit (usually http://localhost:8501).
+
+Notes:
+
+- run.bat already uses Streamlit correctly.
+- run.sh now launches the app with streamlit run src/dashboard.py.
+
+## Model and Data Requirements
+
+### 1) Object Detection Weights
+
+- YOLO base model file: yolov8n.pt
+- Weapon model file: models/gun_bestweight.pt
+
+The detection loader includes a fallback to models/best_model.pt for compatibility.
+
+### 2) Anomaly Detection Weights
+
+- Expected path: models/best_anomaly_model.pth
+
+If missing, run training first.
+
+### 3) Dataset Layout for Training/Inference Lookup
+
+The training/inference code expects a DATASET directory containing list files and feature text files.
+
+Minimum expected files:
+
+```text
+DATASET/
+├── Anomaly_Train.txt
+├── Normal_Train.txt
+└── Features/
+		└── ... category folders with .txt feature files ...
+```
+
+Feature format assumptions:
+
+- 32 temporal segments per video
+- 4096-dimensional vector per segment
+
+## Training (MIL Model)
+
+Run:
+
+```bash
+python src/train_ucf_crime.py
+```
+
+Training behavior:
+
+1. Auto-detects CUDA or CPU
+2. Builds dataset index from DATASET/**.txt
+3. Uses ranking loss + sparsity + temporal smoothness
+4. Writes checkpoint to models/checkpoint.pth
+5. Updates best weights at models/best_anomaly_model.pth
+
+## Dashboard Behavior Summary
+
+1. User uploads image or video
+2. For each frame, object detection runs
+3. If feature file matches uploaded video name, anomaly score is generated from MIL model
+4. SceneAnalyzer samples frames periodically and updates contextual threat memory
+5. Threat state is derived from weapon detection, violence score, and motion heuristics
+6. On threat trigger:
+	 - Critical UI alert shown
+	 - Dispatch message generated
+	 - Siren audio generated and played with st.audio
+
+## Known Limitations
+
+1. The file python-3.12.9-amd64.exe in project root is a Windows installer and is not used by runtime
+2. alert.py dispatch is currently message-generation logic only (no real external API call)
+3. ingest.py is a scaffold and not fully wired into the dashboard pipeline
+
+## Troubleshooting
+
+### Streamlit does not open
+
+Use:
+
+```bash
+streamlit run src/dashboard.py
+```
+
+### No detections appear
+
+Check model paths in src/detect.py and verify files exist where expected.
+
+### CLIP scene understanding unavailable
+
+Install transformers and retry:
+
+```bash
+pip install transformers
+```
+
+### Video upload shows anomaly model load error
+
+Make sure models/best_anomaly_model.pth exists, or train with:
+
+```bash
+python src/train_ucf_crime.py
+```
+
+### Feature lookup misses uploaded videos
+
+The filename stem of the uploaded video must match a .txt feature file stem in DATASET recursively.
+
+## Suggested Cleanup
+
+1. Remove python-3.12.9-amd64.exe from repository
+2. Optionally move yolov8n.pt into models and update references for a cleaner layout
+3. Add explicit pinned versions in requirements.txt
+
+## License
+
+No explicit license file is present yet. Add a LICENSE file before public distribution.

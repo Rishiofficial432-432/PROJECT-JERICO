@@ -12,8 +12,11 @@ CLASS_PERSON = 1
 
 try:
     from ultralytics import YOLO
-    person_model = YOLO("yolov8n.pt")           # detects people
-    weapon_model = YOLO("models/best_model.pt") # your gun weights ✅
+    person_model = YOLO("yolov8n.pt")            # detects people
+    weapon_weights = "models/gun_bestweight.pt"
+    if not os.path.exists(weapon_weights):
+        weapon_weights = "models/best_model.pt"
+    weapon_model = YOLO(weapon_weights)           # custom gun weights
     logger.info("YOLOv8 person model loaded successfully")
     logger.info("Custom weapon model loaded successfully")
 except ImportError:
