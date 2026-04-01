@@ -3,6 +3,10 @@
 <p align="center">AI-powered CCTV threat analytics for rapid detection, context understanding, and security response support.</p>
 
 <p align="center">
+   <img src="docs/images/banner.svg" alt="Project Jerico Banner" width="100%" />
+</p>
+
+<p align="center">
   <img src="https://img.shields.io/badge/Python-3.x-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python" />
   <img src="https://img.shields.io/badge/Streamlit-App-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white" alt="Streamlit" />
   <img src="https://img.shields.io/badge/PyTorch-Deep%20Learning-EE4C2C?style=for-the-badge&logo=pytorch&logoColor=white" alt="PyTorch" />
@@ -38,6 +42,10 @@ It combines:
 When a high-risk event is identified, the dashboard raises a critical alert, activates siren output, and generates geo-tagged dispatch information to support rapid field response.
 
 ## How It Works
+
+<p align="center">
+   <img src="docs/images/pipeline.svg" alt="Project Jerico Pipeline" width="100%" />
+</p>
 
 Project Jerico follows a staged detection and decision pipeline that mirrors practical security workflows.
 
@@ -237,6 +245,10 @@ Using Python 3.14+ can cause module availability gaps for the current torch/scip
 Open the local URL printed in terminal (default: http://localhost:8501).
 
 ## Operating Flow
+
+<p align="center">
+   <img src="docs/images/dashboard-preview.svg" alt="Dashboard Preview" width="100%" />
+</p>
 
 1. Open dashboard
 2. Configure confidence thresholds if needed
