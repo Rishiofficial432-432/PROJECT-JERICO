@@ -1,7 +1,11 @@
 # Environments
 venv/
 env/
+.venv/
 .env
+
+# Local large archives
+*.zip
 
 # Python caching
 __pycache__/

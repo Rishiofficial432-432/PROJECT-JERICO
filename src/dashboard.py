@@ -581,28 +581,32 @@ if uploaded_file is not None:
         violence_detected = anomaly_score >= anomaly_threshold
         
         # --- 2. UNIVERSAL ZERO-SHOT SCENE UNDERSTANDING ---
-        if frame_idx > 0 and frame_idx % 15 == 0:  # Sample twice a second, skip frame 0
-            scene_type, scene_prob = scene_analyzer.analyze_frame(frame)
-            
-            # Update history and keep it within window
-            scene_history.append((scene_type, scene_prob))
-            if len(scene_history) > MAX_HISTORY:
-                scene_history.pop(0)
+        if scene_analyzer is not None and frame_idx > 0 and frame_idx % 15 == 0:  # Sample twice a second, skip frame 0
+            try:
+                scene_type, scene_prob = scene_analyzer.analyze_frame(frame)
 
-            # Consensus logic: Is there a consistent threat across history?
-            threat_keywords = ["suspiciously", "hiding", "fight", "robbery", "weapon", "casing", "panic", "lurking"]
-            recent_threats = [p for t, p in scene_history if any(kw in t for kw in threat_keywords) and p > scene_threshold]
-            
-            # Universal threat: High-conf consensus across the rolling window
-            is_universal_threat = len(recent_threats) >= 2 # At least 2 suspicious checks in a row
-            
-            if is_universal_threat:
-                # Trigger exact emergency service responses
-                st.session_state.current_dispatch = dispatch_authorities(scene_type, scene_prob, active_geo_location)
-                st.session_state.univ_override = True # Keep state for in-between frames
-                st.session_state.safe_counter = 0 # Reset clear timer
-            else:
-                # Increment safe counter for every negative CLIP check
+                # Update history and keep it within window
+                scene_history.append((scene_type, scene_prob))
+                if len(scene_history) > MAX_HISTORY:
+                    scene_history.pop(0)
+
+                # Consensus logic: Is there a consistent threat across history?
+                threat_keywords = ["suspiciously", "hiding", "fight", "robbery", "weapon", "casing", "panic", "lurking"]
+                recent_threats = [p for t, p in scene_history if any(kw in t for kw in threat_keywords) and p > scene_threshold]
+
+                # Universal threat: High-conf consensus across the rolling window
+                is_universal_threat = len(recent_threats) >= 2  # At least 2 suspicious checks in a row
+
+                if is_universal_threat:
+                    # Trigger exact emergency service responses
+                    st.session_state.current_dispatch = dispatch_authorities(scene_type, scene_prob, active_geo_location)
+                    st.session_state.univ_override = True  # Keep state for in-between frames
+                    st.session_state.safe_counter = 0  # Reset clear timer
+                else:
+                    # Increment safe counter for every negative CLIP check
+                    st.session_state.safe_counter = getattr(st.session_state, 'safe_counter', 0) + 1
+            except Exception as e:
+                logger.warning(f"Scene analyzer failed on video frame: {e}")
                 st.session_state.safe_counter = getattr(st.session_state, 'safe_counter', 0) + 1
                 
         # Clear CLIP overlay if no threat seen for 3 checks (~1.5s total)

@@ -222,8 +222,17 @@ pip install -r requirements.txt
 ## Run the Application
 
 ```bash
-streamlit run src/dashboard.py
+./run.sh
 ```
+
+Windows:
+
+```bat
+run.bat
+```
+
+Recommended Python version: 3.10 to 3.12.
+Using Python 3.14+ can cause module availability gaps for the current torch/scipy stack.
 
 Open the local URL printed in terminal (default: http://localhost:8501).
 
