@@ -1,6 +1,16 @@
-# Project Jerico
+<h1 align="center">Project Jerico</h1>
 
-Human-in-the-loop CCTV threat analytics combining object detection, scene understanding, and MIL-based anomaly scoring.
+<p align="center">Human-in-the-loop CCTV threat analytics using YOLO detection, MIL anomaly scoring, and scene understanding.</p>
+
+## Visual Overview
+
+### Dashboard Preview
+
+![Project Jerico Dashboard Preview](docs/images/dashboard-preview.svg)
+
+### Detection Pipeline
+
+![Project Jerico Pipeline](docs/images/pipeline.svg)
 
 ## Overview
 
@@ -13,6 +23,15 @@ The system combines three signals:
 3. Scene-level semantic context (CLIP text-image matching)
 
 When risk is detected, the dashboard renders a critical alert, synthesizes siren audio, and generates a structured dispatch message with geolocation details.
+
+## Quick Start
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+streamlit run src/dashboard.py
+```
 
 ## Core Features
 
