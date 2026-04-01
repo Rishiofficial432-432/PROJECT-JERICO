@@ -5,36 +5,217 @@ import tempfile
 import time
 import os
 import logging
+import secrets
 import numpy as np
 from detect import run_inference, CLASS_WEAPON, CLASS_PERSON
 from detect_anomaly import load_anomaly_model, lookup_features, predict_anomaly
 from scene_understanding import SceneAnalyzer
-from alert import dispatch_authorities
+from alert import (
+    dispatch_authorities,
+    generate_siren_audio,
+    send_ntfy_alert,
+    send_email_alert,
+    send_whatsapp_alert,
+)
+import scipy.io.wavfile as wavfile
+import requests
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def play_siren_js():
-    components.html(
+def apply_jet_black_theme():
+    st.markdown(
         """
-        <script>
-        const ctx = new (window.AudioContext || window.webkitAudioContext)();
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.type = 'sawtooth';
-        gain.gain.setValueAtTime(0.4, ctx.currentTime);
-        for (let i = 0; i < 6; i++) {
-            osc.frequency.setValueAtTime(i % 2 === 0 ? 800 : 1200, ctx.currentTime + i * 0.5);
-        }
-        osc.start(ctx.currentTime);
-        osc.stop(ctx.currentTime + 3);
-        </script>
+        <style>
+            @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap');
+
+            :root {
+                --jet-bg: #040404;
+                --panel: #0b0b0c;
+                --panel-2: #111112;
+                --line: #242426;
+                --text: #f2f2f3;
+                --muted: #9a9aa0;
+            }
+
+            .stApp {
+                background: var(--jet-bg);
+                color: var(--text);
+                font-family: 'Space Grotesk', sans-serif;
+            }
+
+            [data-testid="stHeader"] {
+                background: rgba(5, 5, 5, 0.7);
+                border-bottom: 1px solid var(--line);
+            }
+
+            [data-testid="stSidebar"] {
+                background: #090909;
+                border-right: 1px solid var(--line);
+            }
+
+            [data-testid="stSidebar"] * {
+                color: var(--text);
+                font-family: 'Space Grotesk', sans-serif;
+            }
+
+            .hero-wrap {
+                background: #0a0a0b;
+                border: 1px solid var(--line);
+                border-radius: 18px;
+                padding: 1rem 1.2rem;
+                margin-bottom: 1rem;
+                box-shadow: none;
+            }
+
+            .hero-title {
+                font-size: 1.35rem;
+                font-weight: 700;
+                letter-spacing: 0.2px;
+                margin: 0;
+            }
+
+            .hero-sub {
+                margin-top: 0.25rem;
+                color: var(--muted);
+                font-size: 0.95rem;
+            }
+
+            .kpi-grid {
+                display: grid;
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+                gap: 0.75rem;
+                margin: 0.65rem 0 0.2rem;
+            }
+
+            .kpi-card {
+                background: rgba(20, 20, 22, 0.9);
+                border: 1px solid var(--line);
+                border-radius: 14px;
+                padding: 0.65rem 0.75rem;
+            }
+
+            .kpi-label {
+                font-size: 0.72rem;
+                color: var(--muted);
+                text-transform: uppercase;
+                letter-spacing: 0.08em;
+            }
+
+            .kpi-value {
+                margin-top: 0.22rem;
+                font-size: 0.95rem;
+                color: var(--text);
+                font-weight: 600;
+            }
+
+            .stButton > button,
+            .stDownloadButton > button {
+                background: #121213;
+                color: var(--text);
+                border: 1px solid #2a2b31;
+                border-radius: 12px;
+                font-weight: 600;
+            }
+
+            .stButton > button:hover,
+            .stDownloadButton > button:hover {
+                border-color: #3a3a3f;
+                background: #171719;
+                color: #ffffff;
+            }
+
+            [data-testid="stMetric"] {
+                background: rgba(15, 15, 16, 0.95);
+                border: 1px solid var(--line);
+                border-radius: 12px;
+                padding: 0.45rem 0.6rem;
+            }
+
+            [data-testid="stFileUploader"] {
+                background: rgba(15, 15, 16, 0.95);
+                border: 1px dashed #3a3b42;
+                border-radius: 12px;
+                padding: 0.5rem;
+            }
+        </style>
         """,
-        height=0,
+        unsafe_allow_html=True,
     )
+
+
+def get_browser_location():
+    """Inject JavaScript to get browser geolocation."""
+    geolocation_js = """
+    <script>
+    if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+            (position) => {
+                window.location_data = {
+                    lat: position.coords.latitude,
+                    lon: position.coords.longitude,
+                    accuracy: position.coords.accuracy
+                };
+                console.log('Location:', window.location_data);
+            },
+            (error) => {
+                console.log('Geolocation error:', error);
+                // Fallback: fetch IP-based location
+                fetch('https://ipapi.co/json/')
+                    .then(r => r.json())
+                    .then(data => {
+                        window.location_data = {
+                            lat: data.latitude || 0,
+                            lon: data.longitude || 0,
+                            accuracy: 5000,
+                            source: 'IP'
+                        };
+                    });
+            }
+        );
+    }
+    </script>
+    """
+    components.html(geolocation_js, height=0)
+
+
+def play_siren():
+    """Generate wailing siren and play it with autoplay JavaScript workaround."""
+    try:
+        # Generate siren audio
+        siren_audio = generate_siren_audio(duration=3)
+        
+        # Create unique file to avoid caching
+        siren_path = f"/tmp/siren_{int(time.time() * 1000)}.wav"
+        wavfile.write(siren_path, 44100, (siren_audio * 32767).astype(np.int16))
+        
+        # Play with JavaScript auto-start (bypasses browser autoplay restrictions)
+        with open(siren_path, 'rb') as audio_file:
+            audio_bytes = audio_file.read()
+        
+        # Create HTML5 audio with explicit play trigger
+        audio_b64 = __import__('base64').b64encode(audio_bytes).decode()
+        
+        components.html(
+            f"""
+            <audio id="sirenaudio" autoplay style="display:none;">
+                <source src="data:audio/wav;base64,{audio_b64}" type="audio/wav">
+            </audio>
+            <script>
+                const audio = document.getElementById('sirenaudio');
+                audio.volume = 1.0;
+                audio.play().catch(e => console.log('Autoplay blocked:', e));
+                // Force play after a brief delay
+                setTimeout(() => {{ audio.play().catch(e => console.log('Retry failed', e)); }}, 100);
+            </script>
+            """,
+            height=0
+        )
+        
+        logger.info(f"Siren triggered: {siren_path}")
+    except Exception as e:
+        logger.error(f"Failed to play siren: {e}")
 
 @st.cache_resource
 def get_anomaly_brain():
@@ -66,8 +247,7 @@ except Exception as e:
     logger.error(f"Scene analyzer initialization warning: {e}")
 
 st.set_page_config(page_title="CCTV Human Verification Dashboard", layout="wide")
-
-st.title("🛡️ Human Verification Dashboard")
+apply_jet_black_theme()
 
 # --- Model Status Info ---
 weight_path = "models/best_anomaly_model.pth"
@@ -77,7 +257,30 @@ if os.path.exists(weight_path):
     last_update = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(mtime))
 
 status_emoji = "✅" if anomaly_model is not None else "⚠️"
-st.markdown(f"**{status_emoji} Current Model State:** Trained up to `{last_update}`")
+model_state = "Ready" if anomaly_model is not None else "Unavailable"
+st.markdown(
+    f"""
+    <section class="hero-wrap">
+        <h1 class="hero-title">Project Jerico Surveillance Command</h1>
+        <div class="hero-sub">Professional real-time threat triage with anomaly + object fusion pipelines.</div>
+        <div class="kpi-grid">
+            <div class="kpi-card">
+                <div class="kpi-label">Model Status</div>
+                <div class="kpi-value">{status_emoji} {model_state}</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">Weights Updated</div>
+                <div class="kpi-value">{last_update}</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">Operating Theme</div>
+                    <div class="kpi-value">Jet Black</div>
+            </div>
+        </div>
+    </section>
+    """,
+    unsafe_allow_html=True,
+)
 if anomaly_model is None:
     st.warning("⚠️ Anomaly detection model not loaded. Ensure DATASET/ folder exists and training has completed.")
 st.markdown("Upload CCTV footage to run the anomaly detection models and review alerts.")
@@ -87,9 +290,16 @@ if "threat_triggered" not in st.session_state:
     st.session_state.threat_triggered = False
 if "siren_played" not in st.session_state:
     st.session_state.siren_played = False
+if "device_lat" not in st.session_state:
+    st.session_state.device_lat = 0
+if "device_lon" not in st.session_state:
+    st.session_state.device_lon = 0
+
+# Capture browser geolocation
+get_browser_location()
 
 # --- Settings Sidebar ---
-st.sidebar.header("⚙️ Detection Settings")
+st.sidebar.header("Detection Settings")
 
 smart_mode = st.sidebar.toggle("🤖 Enable Smart Auto-Config", value=False, help="Intelligently locks settings to the optimal common configuration for all models.")
 
@@ -106,14 +316,52 @@ else:
 show_boxes = st.sidebar.toggle("Show Bounding Boxes", value=True)
 
 st.sidebar.markdown("---")
-st.sidebar.header("� Camera Geo-Location Targeting")
-cam_name = st.sidebar.text_input("Camera Alias", value="Cam 04 - High Street")
-cam_lat = st.sidebar.number_input("Latitude", value=40.7128, format="%.6f")
-cam_lon = st.sidebar.number_input("Longitude", value=-74.0060, format="%.6f")
+st.sidebar.header("Location")
+st.sidebar.info("GPS is auto-detected from your device. Click 'Allow Location' when prompted by browser.")
+cam_name = st.sidebar.text_input("Camera Name", value="CCTV-01", help="Friendly name for this camera")
 
-active_geo_location = {"lat": cam_lat, "lon": cam_lon, "name": cam_name}
+# Get GPS from IP as fallback
+try:
+    geo_api = requests.get('https://ipapi.co/json/', timeout=2).json()
+    default_lat = geo_api.get('latitude', 0)
+    default_lon = geo_api.get('longitude', 0)
+except:
+    default_lat, default_lon = 0, 0
+
+active_geo_location = {"lat": default_lat, "lon": default_lon, "name": cam_name}
 st.sidebar.markdown("---")
-st.sidebar.subheader("🧠 Model Synchronization")
+st.sidebar.header("Alerts")
+alert_enabled = st.sidebar.toggle("Enable Notifications", value=True, help="Free push notifications via ntfy.sh")
+if "ntfy_topic" not in st.session_state:
+    st.session_state.ntfy_topic = f"jerico-alerts-{secrets.token_hex(6)}"
+
+ntfy_server = st.sidebar.text_input("ntfy server", value="https://ntfy.sh")
+ntfy_topic = st.sidebar.text_input("Topic name", value=st.session_state.ntfy_topic)
+ntfy_token = st.sidebar.text_input("ntfy token", value=os.getenv("NTFY_TOKEN", ""), type="password")
+email_to = st.sidebar.text_input("Alert email", value=os.getenv("ALERT_TO_EMAIL", ""))
+whatsapp_phone = st.sidebar.text_input("WhatsApp phone (+countrycode)", value=os.getenv("WHATSAPP_PHONE", ""))
+whatsapp_apikey = st.sidebar.text_input("WhatsApp API key (CallMeBot)", value=os.getenv("WHATSAPP_APIKEY", ""), type="password")
+subscribe_url = f"{ntfy_server.rstrip('/')}/{ntfy_topic}"
+st.sidebar.markdown(f"Subscribe URL: {subscribe_url}")
+if st.sidebar.button("Send test notification"):
+    test_result = send_ntfy_alert(
+        ntfy_topic,
+        "Test Alert",
+        1.0,
+        active_geo_location,
+        {"source": "dashboard test"},
+        ntfy_server,
+        ntfy_token,
+    )
+    st.sidebar.success(test_result)
+    if email_to:
+        st.sidebar.info(send_email_alert(email_to, "Test Alert", 1.0, active_geo_location))
+    if whatsapp_phone and whatsapp_apikey:
+        st.sidebar.info(send_whatsapp_alert(whatsapp_phone, whatsapp_apikey, "Test Alert", 1.0, active_geo_location))
+
+st.sidebar.info("Open the Subscribe URL, click 'Subscribe to topic', then allow browser notifications.")
+st.sidebar.markdown("---")
+st.sidebar.subheader("Model Synchronization")
 if st.sidebar.button("🔄 Reload Model Weights", help="Forces the dashboard to load the newest .pth file from the training process."):
     st.cache_resource.clear()
     st.rerun()
@@ -197,8 +445,11 @@ if uploaded_file is not None:
                     "weapon_detected": "Yes",
                     "weapon_confidence": f"{threat_conf:.2f}",
                     "objects_detected": len(detections),
-                    "location": f"{active_geo_location['name']}",
+                    "location": f"{cam_name}",
                 }
+                
+                # Update active location with current camera name
+                active_geo_location["name"] = cam_name
                 
                 # Dispatch to authorities
                 dispatch_msg = dispatch_authorities(
@@ -211,9 +462,50 @@ if uploaded_file is not None:
                 
                 # Play siren
                 try:
-                    play_siren_js()
+                    play_siren()
                 except Exception as e:
                     logger.error(f"Failed to generate siren: {e}")
+                
+                # Send push notification alert
+                if alert_enabled:
+                    try:
+                        # Save scene image
+                        scene_image_path = f"/tmp/threat_scene_{int(time.time())}.jpg"
+                        cv2.imwrite(scene_image_path, frame)
+                        
+                        # Send free push notification
+                        alert_result = send_ntfy_alert(
+                            ntfy_topic,
+                            "Gun Detected in Image",
+                            threat_conf,
+                            active_geo_location,
+                            threat_details,
+                            ntfy_server,
+                            ntfy_token,
+                        )
+                        st.success(alert_result)
+
+                        email_result = send_email_alert(
+                            email_to,
+                            "Gun Detected in Image",
+                            threat_conf,
+                            active_geo_location,
+                            threat_details,
+                            scene_image_path,
+                        )
+                        st.info(email_result)
+
+                        whatsapp_result = send_whatsapp_alert(
+                            whatsapp_phone,
+                            whatsapp_apikey,
+                            "Gun Detected in Image",
+                            threat_conf,
+                            active_geo_location,
+                        )
+                        st.info(whatsapp_result)
+                    except Exception as e:
+                        logger.error(f"Failed to send notification: {e}")
+                        st.warning(f"⚠️ Notification failed: {e}")
             else:
                 st.success("✅ Secure: No immediate weapon threat detected")
 
@@ -423,9 +715,52 @@ if uploaded_file is not None:
                     }
                     
                     try:
-                        play_siren_js()
+                        play_siren()
                     except Exception as e:
                         logger.error(f"Failed to generate siren: {e}")
+                    
+                    # Send push notification alert
+                    if alert_enabled:
+                        try:
+                            # Save threat scene frame
+                            scene_image_path = f"/tmp/threat_scene_{int(time.time())}.jpg"
+                            cv2.imwrite(scene_image_path, frame)
+                            
+                            # Update active location with current camera name
+                            active_geo_location["name"] = cam_name
+                            
+                            # Send free push notification
+                            alert_result = send_ntfy_alert(
+                                ntfy_topic,
+                                threat_msg,
+                                threat_conf if has_threat else anomaly_score,
+                                active_geo_location,
+                                threat_details,
+                                ntfy_server,
+                                ntfy_token,
+                            )
+                            logger.info(alert_result)
+
+                            email_result = send_email_alert(
+                                email_to,
+                                threat_msg,
+                                threat_conf if has_threat else anomaly_score,
+                                active_geo_location,
+                                threat_details,
+                                scene_image_path,
+                            )
+                            logger.info(email_result)
+
+                            whatsapp_result = send_whatsapp_alert(
+                                whatsapp_phone,
+                                whatsapp_apikey,
+                                threat_msg,
+                                threat_conf if has_threat else anomaly_score,
+                                active_geo_location,
+                            )
+                            logger.info(whatsapp_result)
+                        except Exception as e:
+                            logger.error(f"Failed to send notification: {e}")
             else:
                 alert_box.success("✅ Secure: Normal Activity")
                 dispatch_box.empty()
