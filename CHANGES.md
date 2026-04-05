@@ -114,7 +114,7 @@ def analyze_frame(self, frame):
 
 ---
 
-### 5. **src/dashboard.py** — Critical Fixes & Validation
+### 5. **dashboard.py** — Critical Fixes & Validation
 
 **Changes:**
 - Added logging configuration
@@ -314,7 +314,7 @@ Before deploying to production:
 - [ ] Organize dataset into `DATASET/Features/` structure
 - [ ] Run `python src/train_ucf_crime.py` and verify it finds features
 - [ ] Let model train for at least 10 epochs
-- [ ] Run `streamlit run src/dashboard.py` and test with sample video
+- [ ] Run `streamlit run dashboard.py` and test with sample video
 - [ ] Verify GPU is being used: `nvidia-smi` during training should show usage
 - [ ] Check that `models/best_anomaly_model.pth` is being updated
 

@@ -15,7 +15,7 @@ export ALERT_PASSWORD="your-app-password"
 
 # Then run the dashboard:
 cd '/Users/admin/Documents/vs code/PICA/PROJECT-JERICO-main'
-/opt/miniconda3/bin/python -m streamlit run src/dashboard.py --server.port=8507
+/opt/miniconda3/bin/python -m streamlit run dashboard.py --server.port=8507
 ```
 
 ### Step 2: Generate Gmail App Password

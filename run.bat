@@ -12,5 +12,5 @@ set PYTHON_BIN=.venv\Scripts\python.exe
 
 echo Using Python: %PYTHON_BIN%
 
-start /B %PYTHON_BIN% -m streamlit run src\dashboard.py --server.port=8501
+start /B %PYTHON_BIN% -m streamlit run dashboard.py --server.port=8501
 echo Dashboard running on http://localhost:8501

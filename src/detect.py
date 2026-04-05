@@ -9,6 +9,7 @@ logger = logging.getLogger(__name__)
 # Schema constants — no more magic numbers
 CLASS_WEAPON = 0
 CLASS_PERSON = 1
+CLASS_FIRE   = 2
 
 try:
     from ultralytics import YOLO
@@ -19,16 +20,26 @@ try:
     weapon_model = YOLO(weapon_weights)           # custom gun weights
     logger.info("YOLOv8 person model loaded successfully")
     logger.info("Custom weapon model loaded successfully")
+    # Fire detection model
+    fire_weights = "models/fire_detection.pt"
+    if os.path.exists(fire_weights):
+        fire_model = YOLO(fire_weights)
+        logger.info("Fire detection model loaded successfully")
+    else:
+        fire_model = None
+        logger.warning(f"Fire detection weights not found at {fire_weights}")
 except ImportError:
     person_model = None
     weapon_model = None
+    fire_model   = None
     logger.warning("ultralytics not found. Object detection disabled. Install via: pip install ultralytics")
 except Exception as e:
     person_model = None
     weapon_model = None
+    fire_model   = None
     logger.error(f"Failed to load YOLO models: {e}")
 
-def run_inference(frame, person_conf=0.5, weapon_conf=0.4):
+def run_inference(frame, person_conf=0.5, weapon_conf=0.4, fire_conf=0.35):
     detections = []
     if person_model is None or weapon_model is None:
         return detections
@@ -49,9 +60,19 @@ def run_inference(frame, person_conf=0.5, weapon_conf=0.4):
                     x1,y1,x2,y2 = box.xyxy[0].tolist()
                     detections.append([CLASS_WEAPON, float(box.conf[0]), x1,y1,x2,y2])
 
+    # Fire — dedicated fire detection model
+    if fire_model is not None:
+        for r in fire_model(frame, verbose=False):
+            if r.boxes is not None:
+                for box in r.boxes:
+                    if float(box.conf[0]) >= fire_conf:
+                        x1,y1,x2,y2 = box.xyxy[0].tolist()
+                        detections.append([CLASS_FIRE, float(box.conf[0]), x1,y1,x2,y2])
+
     return detections
 
 if __name__ == "__main__":
     print(f"Person model: {person_model}")
     print(f"Weapon model: {weapon_model}")
-    print("Dual detection active ✅")
+    print(f"Fire model:   {fire_model}")
+    print("Triple detection active ✅")

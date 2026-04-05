@@ -151,7 +151,7 @@ The architecture separates perception, behavior analysis, decision logic, and re
 ## Architecture Components
 
 1. Presentation Layer
-   - `src/dashboard.py`
+   - `dashboard.py`
    - Responsible for operator interaction, controls, and result visualization.
 
 2. Detection Layer

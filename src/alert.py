@@ -68,6 +68,14 @@ def dispatch_authorities(incident_type, confidence, geo_location=None, threat_de
         alert_log.append(f"📡 Loss prevention teams notified")
         alert_log.append(f"🚨 SIREN ACTIVATED")
         priority = "CRITICAL"
+    elif "fire" in incident_lower or "flame" in incident_lower or "blaze" in incident_lower:
+        alert_log.append("🔥 FIRE DETECTED — IMMEDIATE EMERGENCY RESPONSE")
+        alert_log.append("🚒 DISPATCHING FIRE DEPARTMENT TO GPS COORDINATES")
+        alert_log.append("🚑 EMS / AMBULANCE DISPATCHED AS PRECAUTION")
+        alert_log.append("🔔 FIRE ALARM ACTIVATED — EVACUATION INITIATED")
+        alert_log.append("📡 ALERT BROADCAST TO ALL NEARBY EMERGENCY UNITS")
+        alert_log.append("🚨 SIREN ACTIVATED")
+        priority = "CRITICAL-FIRE"
     else:
         alert_log.append("ℹ️ Security Logging and monitoring active.")
         priority = "HIGH"

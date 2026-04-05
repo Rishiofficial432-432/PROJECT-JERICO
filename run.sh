@@ -29,4 +29,4 @@ if [ -n "$MISSING" ]; then
 fi
 
 echo "Launching dashboard on http://localhost:8501"
-"$PYTHON_BIN" -m streamlit run src/dashboard.py --server.port=8501
+"$PYTHON_BIN" -m streamlit run dashboard.py --server.port=8501

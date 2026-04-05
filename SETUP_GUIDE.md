@@ -162,7 +162,7 @@ python launcher_utility.py
 
 Or directly with Streamlit:
 ```bash
-streamlit run src/dashboard.py
+streamlit run dashboard.py
 ```
 
 **Output:**
@@ -219,7 +219,7 @@ python src/train_ucf_crime.py > training.log 2>&1 &
 
 ### Terminal 2: Dashboard (foreground)
 ```bash
-streamlit run src/dashboard.py
+streamlit run dashboard.py
 ```
 
 As training improves the model, the dashboard will hot-reload updated weights when you click "🔄 Reload Model Weights" in the sidebar.
@@ -349,7 +349,7 @@ pip install ultralytics
 
 **Error:** `Dashboard shows blank page`
 - Check terminal for error messages
-- Try: `streamlit run src/dashboard.py --logger.level=debug`
+- Try: `streamlit run dashboard.py --logger.level=debug`
 
 ---
 
@@ -413,7 +413,7 @@ Before assuming setup is complete:
 - [ ] Feature files exist: `ls DATASET/Features/Abuse/*.txt | head`
 - [ ] `python src/train_ucf_crime.py` shows "Found X feature files"
 - [ ] `models/best_anomaly_model.pth` created after ~1 epoch
-- [ ] `streamlit run src/dashboard.py` opens at `http://localhost:8501`
+- [ ] `streamlit run dashboard.py` opens at `http://localhost:8501`
 - [ ] Dashboard sidebar shows model status and last update time
 
 ---
@@ -438,7 +438,7 @@ python src/train_ucf_crime.py
 python src/train_ucf_crime.py
 
 # 5. Dashboard (in terminal 2, different window)
-streamlit run src/dashboard.py
+streamlit run dashboard.py
 
 # 6. Open browser and upload videos
 # http://localhost:8501

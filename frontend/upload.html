@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Jerico — Upload & Analyse</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet"/>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #fafafa; --surface: #fff; --border: #e4e4e7;
+      --text: #18181b; --muted: #71717a; --subtle: #f4f4f5;
+      --green: #16a34a; --green-bg: #f0fdf4; --green-border: #bbf7d0;
+      --red: #dc2626; --red-bg: #fef2f2; --red-border: #fecaca;
+      --orange: #ea580c; --orange-bg: #fff7ed; --orange-border: #fed7aa;
+      --sidebar-w: 200px;
+    }
+    body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.5; min-height: 100vh; display: flex; flex-direction: column; }
+
+    nav { position: fixed; top: 0; left: 0; right: 0; height: 52px; background: var(--surface); border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; padding: 0 24px; z-index: 100; }
+    .nav-logo { font-weight: 600; font-size: 15px; }
+    .status-badge { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--green); font-weight: 500; }
+    .status-dot { width: 7px; height: 7px; background: var(--green); border-radius: 50%; }
+    .btn-ghost { background: none; border: 1px solid var(--border); color: var(--text); padding: 6px 12px; font-family: inherit; font-size: 13px; font-weight: 500; border-radius: 6px; cursor: pointer; text-decoration: none; display: inline-block; }
+    .btn-ghost:hover { background: var(--subtle); }
+
+    .layout { display: flex; padding-top: 52px; min-height: 100vh; }
+    aside { position: fixed; top: 52px; left: 0; width: var(--sidebar-w); height: calc(100vh - 52px); background: var(--surface); border-right: 1px solid var(--border); padding: 20px 0; display: flex; flex-direction: column; overflow-y: auto; }
+    .sidebar-section { padding: 0 12px 16px; }
+    .sidebar-label { font-size: 11px; color: var(--muted); font-weight: 500; padding: 0 8px; margin-bottom: 4px; }
+    .nav-item { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 6px; color: var(--muted); font-size: 13px; font-weight: 500; cursor: pointer; text-decoration: none; }
+    .nav-item:hover { background: var(--subtle); color: var(--text); }
+    .nav-item.active { background: var(--subtle); color: var(--text); }
+    .nav-item svg { width: 15px; height: 15px; flex-shrink: 0; }
+
+    main { margin-left: var(--sidebar-w); flex: 1; padding: 32px; max-width: 1100px; }
+    .page-title { font-size: 18px; font-weight: 600; margin-bottom: 6px; }
+    .page-sub { font-size: 13px; color: var(--muted); margin-bottom: 28px; }
+
+    /* ── Settings Bar ── */
+    .settings-bar { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px 20px; margin-bottom: 20px; display: flex; flex-direction: column; gap: 14px; }
+    .settings-row { display: flex; align-items: center; gap: 24px; flex-wrap: wrap; }
+    .settings-bar-title { font-size: 12px; font-weight: 600; color: var(--text); margin-bottom: 2px; }
+    .setting-item { display: flex; align-items: center; gap: 10px; font-size: 13px; flex: 1; min-width: 180px; }
+    .setting-item label { color: var(--muted); white-space: nowrap; font-size: 12px; min-width: 130px; }
+    .setting-item input[type=range] { flex: 1; accent-color: var(--text); }
+    .setting-item input[type=text] { border: 1px solid var(--border); background: var(--bg); padding: 4px 8px; border-radius: 4px; font-size: 12px; font-family: inherit; width: 90px; }
+    .setting-val { font-weight: 600; font-family: monospace; min-width: 32px; font-size: 13px; }
+    .setting-chip { font-size: 10px; font-weight: 500; padding: 1px 7px; border-radius: 20px; border: 1px solid; white-space: nowrap; }
+    .chip-person { background: #eff6ff; color: #2563eb; border-color: #bfdbfe; }
+    .chip-weapon { background: var(--red-bg); color: var(--red); border-color: var(--red-border); }
+    .chip-fire   { background: var(--orange-bg); color: var(--orange); border-color: var(--orange-border); }
+    .chip-anomaly{ background: #faf5ff; color: #7c3aed; border-color: #ddd6fe; }
+
+    /* ── Drop Zone ── */
+    .drop-zone { border: 1.5px dashed var(--border); border-radius: 10px; background: var(--surface); padding: 48px 24px; display: flex; flex-direction: column; align-items: center; text-align: center; cursor: pointer; margin-bottom: 24px; transition: border-color 0.2s, background 0.2s; }
+    .drop-zone:hover, .drop-zone.active { border-color: #a1a1aa; background: var(--subtle); }
+    .drop-icon { width: 40px; height: 40px; color: #a1a1aa; margin-bottom: 14px; }
+    .drop-title { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
+    .drop-sub { font-size: 13px; color: var(--muted); margin-bottom: 18px; }
+    .btn-secondary { background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 7px 16px; font-family: inherit; font-size: 13px; font-weight: 500; border-radius: 6px; cursor: pointer; }
+    .btn-secondary:hover { background: var(--subtle); }
+
+    /* ── Progress ── */
+    .upload-progress { margin-bottom: 24px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; }
+    .prog-header { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 13px; }
+    .prog-filename { font-weight: 500; }
+    .prog-pct { color: var(--muted); }
+    .prog-bar { height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
+    .prog-fill { height: 100%; background: var(--text); border-radius: 2px; transition: width 0.2s; }
+    .prog-status { font-size: 12px; color: var(--muted); margin-top: 6px; }
+
+    /* ── Results ── */
+    .results-grid { display: grid; grid-template-columns: 1fr 300px; gap: 20px; }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+    .card-header { padding: 14px 18px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+    .card-title { font-size: 13px; font-weight: 600; }
+    .card-meta { font-size: 12px; color: var(--muted); }
+
+    /* Frame with bbox overlay */
+    .frame-view { position: relative; background: #e5e7eb; min-height: 300px; overflow: hidden; }
+    .frame-grid { position: absolute; inset: 0; background: repeating-linear-gradient(0deg,transparent,transparent 29px,#d1d5db 29px,#d1d5db 30px), repeating-linear-gradient(90deg,transparent,transparent 29px,#d1d5db 29px,#d1d5db 30px); }
+    .frame-overlay { min-height: 300px; position: relative; }
+    .bbox { position: absolute; border: 2px solid; }
+    .bbox-label { position: absolute; top: -20px; left: 0; font-size: 10px; font-weight: 700; padding: 1px 6px; white-space: nowrap; }
+    .bbox.weapon { border-color: var(--red); }
+    .bbox.weapon .bbox-label { background: var(--red); color: #fff; }
+    .bbox.fire { border-color: var(--orange); }
+    .bbox.fire .bbox-label { background: var(--orange); color: #fff; }
+    .bbox.person { border-color: #2563eb; }
+    .bbox.person .bbox-label { background: #2563eb; color: #fff; }
+    .frame-bar { position: absolute; bottom: 0; left: 0; right: 0; background: rgba(0,0,0,0.5); color: #fff; font-size: 11px; padding: 6px 14px; display: flex; justify-content: space-between; }
+
+    .analysis-row { display: flex; justify-content: space-between; align-items: center; padding: 11px 18px; border-bottom: 1px solid var(--border); }
+    .analysis-row:last-child { border-bottom: none; }
+    .analysis-key { font-size: 13px; color: var(--muted); }
+    .analysis-val { font-size: 13px; font-weight: 500; }
+    .badge { font-size: 11px; font-weight: 500; padding: 2px 8px; border-radius: 20px; border: 1px solid; }
+    .badge.safe { background: var(--green-bg); color: var(--green); border-color: var(--green-border); }
+    .badge.threat { background: var(--red-bg); color: var(--red); border-color: var(--red-border); }
+
+    .alert-banner { border-radius: 8px; padding: 12px 16px; display: flex; align-items: flex-start; gap: 10px; font-size: 13px; }
+    .alert-banner svg { width: 15px; height: 15px; margin-top: 1px; flex-shrink: 0; }
+    .alert-banner.weapon-alert { background: var(--red-bg); border: 1px solid var(--red-border); color: var(--red); }
+    .alert-banner.fire-alert { background: var(--orange-bg); border: 1px solid var(--orange-border); color: var(--orange); }
+    .banner-title { font-weight: 600; margin-bottom: 2px; }
+    .banner-sub { font-size: 12px; opacity: 0.8; }
+
+    .action-row { padding: 14px 18px; display: flex; flex-direction: column; gap: 8px; }
+    .btn-outline { background: none; border: 1px solid var(--border); color: var(--text); padding: 9px 16px; font-family: inherit; font-size: 13px; font-weight: 500; border-radius: 6px; cursor: pointer; width: 100%; }
+    .btn-outline:hover { background: var(--subtle); }
+    .btn-danger { background: var(--red); color: #fff; border: none; padding: 9px 16px; font-family: inherit; font-size: 13px; font-weight: 500; border-radius: 6px; cursor: pointer; width: 100%; }
+    .btn-danger:hover { background: #b91c1c; }
+
+    #noResults { text-align: center; padding: 40px; color: var(--muted); font-size: 13px; }
+  </style>
+</head>
+<body>
+
+<nav>
+  <span class="nav-logo">Jerico</span>
+  <div class="nav-right">
+    <div class="status-badge"><div class="status-dot"></div>All systems normal</div>
+    <a href="index.html" class="btn-ghost">Dashboard</a>
+  </div>
+</nav>
+
+<div class="layout">
+  <aside>
+    <div class="sidebar-section">
+      <div class="sidebar-label">Navigation</div>
+      <a href="index.html" class="nav-item">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        Dashboard
+      </a>
+      <a href="upload.html" class="nav-item active">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        Upload
+      </a>
+      <a href="#" class="nav-item">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+        Alerts
+      </a>
+      <a href="#" class="nav-item">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41M20 12h-2M17.66 17.66l-1.41-1.41M12 20v-2M6.34 17.66l1.41-1.41M4 12h2M6.34 6.34l1.41 1.41"/></svg>
+        Settings
+      </a>
+    </div>
+  </aside>
+
+  <main>
+    <h1 class="page-title">Upload & Analyse</h1>
+    <p class="page-sub">Upload CCTV footage for live AI threat detection.</p>
+
+    <!-- Settings -->
+    <div class="settings-bar">
+      <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px;">
+        <div class="settings-bar-title">Detection thresholds</div>
+        <div class="setting-item" style="flex:none; min-width:0;">
+          <label style="min-width:0;">Camera name</label>
+          <input type="text" id="cameraName" value="CCTV-01" style="width:100px;"/>
+        </div>
+      </div>
+      <div class="settings-row">
+        <!-- Person -->
+        <div class="setting-item">
+          <span class="setting-chip chip-person">Person</span>
+          <label>Min confidence</label>
+          <input type="range" id="personSlider" min="0.10" max="0.99" step="0.05" value="0.50"
+                 oninput="document.getElementById('personVal').textContent=parseFloat(this.value).toFixed(2)"/>
+          <span class="setting-val" id="personVal">0.50</span>
+        </div>
+        <!-- Weapon -->
+        <div class="setting-item">
+          <span class="setting-chip chip-weapon">Weapon</span>
+          <label>Min confidence</label>
+          <input type="range" id="weaponSlider" min="0.10" max="0.99" step="0.05" value="0.65"
+                 oninput="document.getElementById('weaponVal').textContent=parseFloat(this.value).toFixed(2)"/>
+          <span class="setting-val" id="weaponVal">0.65</span>
+        </div>
+      </div>
+      <div class="settings-row">
+        <!-- Fire -->
+        <div class="setting-item">
+          <span class="setting-chip chip-fire">Fire</span>
+          <label>Min confidence</label>
+          <input type="range" id="fireSlider" min="0.10" max="0.99" step="0.05" value="0.60"
+                 oninput="document.getElementById('fireVal').textContent=parseFloat(this.value).toFixed(2)"/>
+          <span class="setting-val" id="fireVal">0.60</span>
+        </div>
+        <!-- Anomaly -->
+        <div class="setting-item">
+          <span class="setting-chip chip-anomaly">Anomaly</span>
+          <label>Alert above (%)</label>
+          <input type="range" id="anomalySlider" min="10" max="99" step="5" value="70"
+                 oninput="document.getElementById('anomalyVal').textContent=this.value+'%'"/>
+          <span class="setting-val" id="anomalyVal">70%</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Drop zone -->
+    <div class="drop-zone" id="dropZone"
+         ondragover="ev(event,'add')" ondragleave="ev(event,'remove')" ondrop="onDrop(event)"
+         onclick="document.getElementById('fileInput').click()">
+      <input id="fileInput" type="file" style="display:none" accept=".mp4,.avi,.mov,.mkv,.webm,.jpg,.jpeg,.png,.bmp,.webp" onchange="onFile(event)"/>
+      <svg class="drop-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+      <div class="drop-title">Drop footage here</div>
+      <div class="drop-sub">MP4, AVI, MOV, MKV, WebM, JPG, PNG, BMP, WebP</div>
+      <button class="btn-secondary" onclick="event.stopPropagation(); document.getElementById('fileInput').click()">Browse files</button>
+    </div>
+
+    <!-- Progress -->
+    <div class="upload-progress" id="progressBox" style="display:none">
+      <div class="prog-header">
+        <span class="prog-filename" id="progFile">—</span>
+        <span class="prog-pct" id="progPct">0%</span>
+      </div>
+      <div class="prog-bar"><div class="prog-fill" id="progFill" style="width:0%"></div></div>
+      <div class="prog-status" id="progStatus">Uploading...</div>
+    </div>
+
+    <!-- Error box -->
+    <div id="errorBox" style="display:none; background:var(--red-bg); border:1px solid var(--red-border); border-radius:8px; padding:12px 16px; color:var(--red); font-size:13px; margin-bottom:16px;"></div>
+
+    <!-- Results -->
+    <div id="results" style="display:none">
+      <div class="results-grid">
+        <!-- Frame viewer -->
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title" id="rFrameTitle">Analysed frame</span>
+            <span class="card-meta" id="rFrameMeta"></span>
+          </div>
+          <div class="frame-view" id="frameViewWrap">
+            <!-- Real annotated frame from API -->
+            <img id="frameImg"
+                 style="width:100%; display:block; min-height:200px; object-fit:contain; background:#111;"
+                 alt="Analysed frame"
+                 src=""/>
+            <!-- Shown when no frame returned-->
+            <div id="framePlaceholder" style="display:none; height:280px; background:var(--subtle); align-items:center; justify-content:center; flex-direction:column; gap:8px; color:#a1a1aa;">
+              <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M15 10l4.553-2.069A1 1 0 0 1 21 8.878v6.244a1 1 0 0 1-1.447.894L15 14M3 8a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8z"/></svg>
+              <span style="font-size:13px;">No frame available</span>
+            </div>
+            <div class="frame-bar">
+              <span id="rCameraLabel">—</span>
+              <span id="rStatusLabel" style="color:#86efac;">Analysis complete</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right panel -->
+        <div style="display:flex; flex-direction:column; gap:14px;">
+          <div class="card">
+            <div class="card-header"><span class="card-title">Detection results</span></div>
+            <div class="analysis-row">
+              <span class="analysis-key">Threat status</span>
+              <span id="rThreatStatus" class="badge safe">Secure</span>
+            </div>
+            <div class="analysis-row">
+              <span class="analysis-key">Detections</span>
+              <span class="analysis-val" id="rDetections">—</span>
+            </div>
+            <div class="analysis-row">
+              <span class="analysis-key">Weapon confidence</span>
+              <span class="analysis-val" id="rWeaponConf">—</span>
+            </div>
+            <div class="analysis-row">
+              <span class="analysis-key">Fire confidence</span>
+              <span class="analysis-val" id="rFireConf">—</span>
+            </div>
+            <div class="analysis-row">
+              <span class="analysis-key">Anomaly score</span>
+              <span class="analysis-val" id="rAnomalyScore">—</span>
+            </div>
+            <div class="analysis-row">
+              <span class="analysis-key">Scene</span>
+              <span class="analysis-val" id="rScene">—</span>
+            </div>
+            <div id="alertBanners" style="padding:8px 0;"></div>
+          </div>
+          <div class="card">
+            <div class="action-row">
+              <button class="btn-outline" onclick="resetUpload()">Analyse another file</button>
+              <button id="dispatchBtn" class="btn-danger" style="display:none" onclick="triggerDispatch()">Dispatch emergency services</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="noResults" style="display:none; text-align:center; padding:40px; color:var(--muted);">
+      No footage analysed yet. Upload a file above.
+    </div>
+  </main>
+</div>
+
+<script>
+  const API = 'http://localhost:8000/api';
+
+  function ev(e, action) {
+    e.preventDefault();
+    document.getElementById('dropZone').classList[action]('active');
+  }
+  function onDrop(e) {
+    e.preventDefault();
+    document.getElementById('dropZone').classList.remove('active');
+    if (e.dataTransfer.files[0]) processFile(e.dataTransfer.files[0]);
+  }
+  function onFile(e) { if (e.target.files[0]) processFile(e.target.files[0]); }
+
+  function resetUpload() {
+    document.getElementById('results').style.display = 'none';
+    document.getElementById('progressBox').style.display = 'none';
+    document.getElementById('dropZone').style.display = 'flex';
+    document.getElementById('errorBox').style.display = 'none';
+    document.getElementById('fileInput').value = '';
+  }
+
+  function showError(msg) {
+    const eb = document.getElementById('errorBox');
+    eb.style.display = 'block';
+    eb.textContent = `Error: ${msg}`;
+    document.getElementById('progressBox').style.display = 'none';
+  }
+
+  async function processFile(file) {
+    document.getElementById('dropZone').style.display = 'none';
+    document.getElementById('errorBox').style.display = 'none';
+    const pb = document.getElementById('progressBox');
+    pb.style.display = 'block';
+    document.getElementById('progFile').textContent = file.name;
+    document.getElementById('progStatus').textContent = 'Uploading...';
+
+    // Animate progress bar during upload
+    let p = 0;
+    const iv = setInterval(() => {
+      p = Math.min(p + 3, 85);
+      document.getElementById('progFill').style.width = p + '%';
+      document.getElementById('progPct').textContent = Math.round(p) + '%';
+    }, 150);
+
+    // Build form data — one value per model
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('camera_name',          document.getElementById('cameraName').value || 'CCTV-01');
+    fd.append('person_conf_threshold', document.getElementById('personSlider').value);
+    fd.append('weapon_conf_threshold', document.getElementById('weaponSlider').value);
+    fd.append('fire_conf_threshold',   document.getElementById('fireSlider').value);
+    fd.append('anomaly_alert_pct',     document.getElementById('anomalySlider').value);
+
+    try {
+      document.getElementById('progStatus').textContent = 'Running AI inference...';
+      const resp = await fetch(`${API}/upload`, { method: 'POST', body: fd });
+      clearInterval(iv);
+
+      if (!resp.ok) {
+        const err = await resp.json();
+        showError(err.detail || resp.statusText);
+        return;
+      }
+
+      // Fill progress to 100%
+      document.getElementById('progFill').style.width = '100%';
+      document.getElementById('progPct').textContent = '100%';
+      document.getElementById('progStatus').textContent = 'Analysis complete';
+
+      const data = await resp.json();
+      setTimeout(() => showResults(data, file.name), 300);
+
+    } catch(e) {
+      clearInterval(iv);
+      showError('Cannot reach API server. Make sure it is running on port 8000.');
+    }
+  }
+
+  function showResults(d, filename) {
+    document.getElementById('results').style.display = 'block';
+
+    // Frame header
+    document.getElementById('rFrameTitle').textContent =
+      d.media_type === 'video' ? 'Video analysis result' : 'Image analysis result';
+    document.getElementById('rFrameMeta').textContent =
+      d.media_type === 'video'
+        ? `${d.total_frames} frames · ${d.duration_seconds}s · worst frame #${d.worst_frame}`
+        : filename;
+    document.getElementById('rCameraLabel').textContent = `${d.camera} · ${filename}`;
+    document.getElementById('rStatusLabel').textContent =
+      d.has_threat || d.has_fire ? '⚠ Threat detected' : '✓ Analysis complete';
+
+    // ── Show the annotated frame image ──
+    const img = document.getElementById('frameImg');
+    const placeholder = document.getElementById('framePlaceholder');
+    if (d.frame_b64 && d.frame_b64.length > 0) {
+      img.src = d.frame_b64;   // data:image/jpeg;base64,...
+      img.style.display = 'block';
+      placeholder.style.display = 'none';
+    } else {
+      // No frame available (e.g. model not loaded)
+      img.style.display = 'none';
+      placeholder.style.display = 'flex';
+    }
+
+    // Analysis rows
+    const ts = document.getElementById('rThreatStatus');
+    ts.textContent = (d.has_threat || d.has_fire) ? 'Threat detected' : 'Secure';
+    ts.className = 'badge ' + ((d.has_threat || d.has_fire) ? 'threat' : 'safe');
+
+    document.getElementById('rDetections').textContent = `${d.total_detections} object(s)`;
+    document.getElementById('rWeaponConf').textContent =
+      d.weapon_conf > 0 ? d.weapon_conf.toFixed(2) : '0.00';
+    document.getElementById('rFireConf').textContent =
+      d.fire_conf > 0 ? d.fire_conf.toFixed(2) : '0.00';
+    document.getElementById('rAnomalyScore').textContent =
+      (d.anomaly_score > 0) ? d.anomaly_score.toFixed(1) + '%' : '—';
+    document.getElementById('rScene').textContent =
+      d.scene_label && d.scene_label !== '—' ? d.scene_label : '—';
+
+    // Alert banners
+    const banners = document.getElementById('alertBanners');
+    banners.innerHTML = '';
+    if (d.has_threat) {
+      banners.innerHTML += `
+        <div class="alert-banner weapon-alert" style="margin:0 18px 8px;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          <div><div class="banner-title">Weapon detected</div><div class="banner-sub">Confidence: ${d.weapon_conf.toFixed(2)}</div></div>
+        </div>`;
+    }
+    if (d.has_fire) {
+      banners.innerHTML += `
+        <div class="alert-banner fire-alert" style="margin:0 18px 8px;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          <div><div class="banner-title">Fire detected</div><div class="banner-sub">Confidence: ${d.fire_conf.toFixed(2)}</div></div>
+        </div>`;
+    }
+
+    // Dispatch button only if threat exists
+    document.getElementById('dispatchBtn').style.display =
+      (d.has_threat || d.has_fire) ? 'block' : 'none';
+  }
+
+  function triggerDispatch() {
+    alert('Emergency dispatch triggered. In production this calls dispatch_authorities() via the API.');
+  }
+</script>
+</body>
+</html>
