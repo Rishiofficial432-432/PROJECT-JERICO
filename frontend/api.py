@@ -1,9 +1,7 @@
 """
 Jerico API Server — FastAPI backend for the frontend dashboard.
 Serves live model metrics, handles footage uploads, and streams inference results.
-
-Run with:
-    uvicorn frontend.api:app --host 0.0.0.0 --port 8000 --reload
+Queue-buffered async processing for maximum performance.
 """
 
 import sys
@@ -23,33 +21,32 @@ from typing import Optional
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 import base64
-
+import cv2
+import numpy as np
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse
-import cv2
-import numpy as np
+
+IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
+VIDEO_EXTS = {".mp4", ".avi", ".mov", ".mkv", ".webm"}
+
+from detect import (
+    run_inference_async, 
+    CLASS_WEAPON, CLASS_PERSON, CLASS_FIRE, CLASS_ROAD_ANOMALY,
+    person_model, weapon_model, fire_model, road_model
+)
+from threat_logic import (
+    WEAPON_CONF_THRESHOLD, FIRE_CONF_THRESHOLD, ROAD_ANOMALY_CONF_THRESHOLD,
+    evaluate_threat, refine_detections
+)
+from worker_pool import get_executor
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # ─────────────────────────────────────────────
-#  Model loading (mirrors dashboard.py)
+#  Optional Model check
 # ─────────────────────────────────────────────
-
-_models_loaded = False
-_model_errors: dict[str, str] = {}
-
-try:
-    from detect import run_inference, CLASS_WEAPON, CLASS_PERSON, CLASS_FIRE
-    from threat_logic import WEAPON_CONF_THRESHOLD, FIRE_CONF_THRESHOLD
-    _models_loaded = True
-except Exception as e:
-    logger.error(f"detect.py import failed: {e}")
-    _model_errors["yolo"] = str(e)
-    CLASS_WEAPON, CLASS_PERSON, CLASS_FIRE = 0, 1, 2
-    WEAPON_CONF_THRESHOLD = 0.85
-    FIRE_CONF_THRESHOLD   = 0.55
 
 try:
     from detect_anomaly import load_anomaly_model, lookup_features, predict_anomaly
@@ -59,7 +56,6 @@ except Exception as e:
     logger.error(f"Anomaly model failed: {e}")
     _anomaly_model = _anomaly_device = None
     _anomaly_ready = False
-    _model_errors["anomaly"] = str(e)
 
 try:
     from scene_understanding import SceneAnalyzer
@@ -69,7 +65,6 @@ except Exception as e:
     logger.warning(f"Scene analyzer failed: {e}")
     _scene_analyzer = None
     _scene_ready = False
-    _model_errors["scene"] = str(e)
 
 # ─────────────────────────────────────────────
 #  In-memory state store
@@ -77,19 +72,22 @@ except Exception as e:
 
 _state = {
     "incidents_today": 0,
-    "last_scan_ts": None,         # datetime of last frame processed
-    "anomaly_score": 0.0,         # latest anomaly score (0-100)
+    "last_scan_ts": None,
+    "anomaly_score": 0.0,
     "weapon_conf": 0.0,
     "fire_conf": 0.0,
+    "road_conf": 0.0,
     "violence_score": 0.0,
     "scene_label": "No footage analysed",
     "scene_conf": 0.0,
     "threat_active": False,
     "threat_type": [],
     "active_camera": "—",
+    "last_frame_b64": "",
+    "last_filename": "—",
+    "dispatch_count": 0,
 }
 
-# Circular event log (max 100 entries)
 _events: deque = deque(maxlen=100)
 _events_lock = threading.Lock()
 
@@ -107,7 +105,7 @@ def _log_event(camera: str, event_type: str, confidence: Optional[float], status
 #  FastAPI app
 # ─────────────────────────────────────────────
 
-app = FastAPI(title="Jerico API", version="1.0.0")
+app = FastAPI(title="Jerico API", version="2.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -116,469 +114,350 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ─────────────────────────────────────────────
-#  /api/status  — model health
-# ─────────────────────────────────────────────
-
 @app.get("/api/status")
 def get_status():
-    weight_path = Path("models/best_anomaly_model.pth")
-    last_update = "Never trained"
-    if weight_path.exists():
-        mtime = weight_path.stat().st_mtime
-        last_update = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M")
-
+    yolo_ready = all([person_model, weapon_model])
     return {
-        "yolo":    {"ready": _models_loaded,  "error": _model_errors.get("yolo")},
-        "anomaly": {"ready": _anomaly_ready,  "error": _model_errors.get("anomaly")},
-        "scene":   {"ready": _scene_ready,    "error": _model_errors.get("scene")},
-        "fire":    {"ready": _models_loaded,  "error": None},   # shares yolo pipeline
-        "weights_updated": last_update,
-        "models_active": sum([_models_loaded, _anomaly_ready, _scene_ready, _models_loaded]),
+        "yolo":    {"ready": yolo_ready, "error": None},
+        "anomaly": {"ready": _anomaly_ready, "error": None},
+        "scene":   {"ready": _scene_ready, "error": None},
+        "fire":    {"ready": bool(fire_model), "error": None},
+        "road":    {"ready": bool(road_model), "error": None},
+        "models_active": sum([yolo_ready, _anomaly_ready, _scene_ready, bool(fire_model), bool(road_model)]),
     }
-
-# ─────────────────────────────────────────────
-#  /api/metrics  — live dashboard numbers
-# ─────────────────────────────────────────────
 
 @app.get("/api/metrics")
 def get_metrics():
     last_scan = "Never"
     if _state["last_scan_ts"]:
         elapsed = int(time.time() - _state["last_scan_ts"])
-        if elapsed < 60:
-            last_scan = f"{elapsed}s ago"
-        else:
-            last_scan = f"{elapsed // 60}m ago"
+        last_scan = f"{elapsed}s ago" if elapsed < 60 else f"{elapsed // 60}m ago"
 
-    return {
-        "incidents_today": _state["incidents_today"],
-        "last_scan": last_scan,
-        "anomaly_score": round(_state["anomaly_score"], 1),
-        "weapon_conf": round(_state["weapon_conf"], 2),
-        "fire_conf": round(_state["fire_conf"], 2),
-        "violence_score": round(_state["violence_score"], 1),
-        "scene_label": _state["scene_label"],
-        "scene_conf": round(_state["scene_conf"], 2),
-        "threat_active": _state["threat_active"],
-        "threat_type": _state["threat_type"],
-        "active_camera": _state["active_camera"],
-    }
-
-# ─────────────────────────────────────────────
-#  /api/events  — event log
-# ─────────────────────────────────────────────
+    return {**_state, "last_scan": last_scan}
 
 @app.get("/api/events")
 def get_events():
     with _events_lock:
         return list(_events)
 
-# ─────────────────────────────────────────────
-#  /api/events/stream  — Server-Sent Events
-# ─────────────────────────────────────────────
-
-async def _sse_generator():
-    """Async SSE — yields metrics+events every second without blocking the event loop."""
-    while True:
-        metrics = get_metrics()
-        with _events_lock:
-            events = list(_events)[:10]
-        payload = json.dumps({"metrics": metrics, "events": events})
-        yield f"data: {payload}\n\n"
-        await asyncio.sleep(1)          # non-blocking — event loop stays free
-
 @app.get("/api/events/stream")
 async def sse_stream():
-    return StreamingResponse(
-        _sse_generator(),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )
+    async def _gen():
+        while True:
+            payload = json.dumps({"metrics": get_metrics(), "events": get_events()})
+            yield f"data: {payload}\n\n"
+            await asyncio.sleep(1)
+    return StreamingResponse(_gen(), media_type="text/event-stream")
 
 # ─────────────────────────────────────────────
-#  /api/upload  — process image or video
+#  Queue-Buffered Video Processing
 # ─────────────────────────────────────────────
 
-IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
-VIDEO_EXTS = {".mp4", ".avi", ".mov", ".mkv", ".webm"}
+async def _frame_producer(cap, interval, queue, num_workers):
+    frame_idx = 0
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret: break
+        if frame_idx % interval == 0:
+            await queue.put((frame_idx, frame.copy()))
+        frame_idx += 1
+    for _ in range(num_workers):
+        await queue.put(None) # Signal completion to all workers
+
+async def _inference_worker(queue, results_list, th, executor):
+    while True:
+        item = await queue.get()
+        if item is None:
+            queue.task_done()
+            break
+        idx, frame = item
+        # Parallel model inference
+        dets = await run_inference_async(
+            frame, 
+            person_conf=th["person"], 
+            weapon_conf=0.1, # Allow refinement logic to handle the threshold
+            fire_conf=th["fire"], 
+            road_conf=th["road"], 
+            executor=executor
+        )
+        
+        # Apply Accuracy Hardening (Spatial Validation)
+        refined_dets = refine_detections(dets)
+        r = _analyse_detections(refined_dets, th, frame)
+        results_list.append((idx, frame, r))
+        
+        # Real-time Flagging: Update global state immediately if threat found or every 5th analysed frame
+        is_threat = r["has_threat"] or r["has_fire"]
+        if is_threat or idx % 5 == 0:
+            frame_b64 = _encode_frame_b64(frame, r["boxes"])
+            _state.update({
+                "last_scan_ts": time.time(),
+                "weapon_conf": max(_state["weapon_conf"], r.get("weapon_conf", 0)),
+                "fire_conf": max(_state["fire_conf"], r.get("fire_conf", 0)),
+                "road_conf": max(_state["road_conf"], r.get("road_conf", 0)),
+                "threat_active": _state["threat_active"] or is_threat,
+                "threat_type": list(set(_state["threat_type"]) | set(r["threat_types"])),
+                "last_frame_b64": frame_b64,
+            })
+            if is_threat:
+                _log_event(_state["active_camera"], " + ".join(r["threat_types"]), 
+                          max(r["weapon_conf"], r["fire_conf"], r["road_conf"]), "active")
+        
+        queue.task_done()
 
 @app.post("/api/upload")
 async def upload_footage(
     file: UploadFile = File(...),
     camera_name: str = "CCTV-01",
-    person_conf_threshold: float = 0.50,
-    weapon_conf_threshold: float = 0.65,
-    fire_conf_threshold:   float = 0.60,
-    anomaly_alert_pct:     float = 70.0,
+    person_conf: float = 0.60,
+    weapon_conf: float = 0.85,
+    fire_conf:   float = 0.70,
+    road_conf:   float = 0.60,
+    anomaly_alert: float = 70.0,
+    # Handle both naming conventions from frontend
+    person_conf_threshold: float = None,
+    weapon_conf_threshold: float = None,
 ):
-    if not _models_loaded:
-        raise HTTPException(503, "YOLO models not loaded — check server logs.")
+    # Use threshold variants if provided
+    if person_conf_threshold is not None:
+        person_conf = person_conf_threshold
+    if weapon_conf_threshold is not None:
+        weapon_conf = weapon_conf_threshold
 
     ext = Path(file.filename).suffix.lower()
-    if ext not in IMAGE_EXTS | VIDEO_EXTS:
-        raise HTTPException(400, f"Unsupported file type: {ext}")
-
-    # Save to temp file
     with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
         tmp.write(await file.read())
         tmp_path = tmp.name
 
-    _state["active_camera"] = camera_name
+    _state.update({
+        "active_camera": camera_name,
+        "threat_active": False,
+        "threat_type": [],
+        "weapon_conf": 0.0,
+        "fire_conf": 0.0,
+        "road_conf": 0.0,
+        "last_filename": file.filename
+    })
 
-    thresholds = {
-        "person": person_conf_threshold,
-        "weapon": weapon_conf_threshold,
-        "fire":   fire_conf_threshold,
-        "anomaly_alert_pct": anomaly_alert_pct,
-    }
+    th = {"person": person_conf, "weapon": weapon_conf, "fire": fire_conf, "road": road_conf}
+    executor = get_executor()
 
     try:
         if ext in IMAGE_EXTS:
-            # Run CPU-bound inference in a thread pool — keeps event loop free
-            result = await asyncio.to_thread(_process_image, tmp_path, camera_name, thresholds)
-        else:
-            result = await asyncio.to_thread(_process_video, tmp_path, camera_name, thresholds, file.filename)
-        return result
-    finally:
-        try:
-            os.unlink(tmp_path)
-        except Exception:
-            pass
-
-# ─────────────────────────────────────────────
-#  Image inference
-# ─────────────────────────────────────────────
-
-def _process_image(path: str, camera: str, th: dict) -> dict:
-    frame = cv2.imread(path)
-    if frame is None:
-        raise HTTPException(400, "Could not decode image.")
-
-    detections = run_inference(
-        frame,
-        person_conf=th["person"],
-        weapon_conf=th["weapon"],
-        fire_conf=th["fire"],
-    )
-    _state["last_scan_ts"] = time.time()
-
-    results = _analyse_detections(detections, th, frame)
-
-    # Encode annotated frame as base64 JPEG
-    frame_b64 = _encode_frame_b64(frame, results["boxes"])
-
-    # Scene
-    scene_label, scene_conf = "—", 0.0
-    if _scene_analyzer:
-        try:
-            scene_label, scene_conf = _scene_analyzer.analyze_frame(frame)
-        except Exception as e:
-            logger.warning(f"Scene analyze failed: {e}")
-
-    _state.update({
-        "weapon_conf": results["weapon_conf"],
-        "fire_conf": results["fire_conf"],
-        "scene_label": scene_label,
-        "scene_conf": scene_conf,
-        "anomaly_score": 0.0,
-        "violence_score": 0.0,
-        "threat_active": results["has_threat"] or results["has_fire"],
-        "threat_type": results["threat_types"],
-    })
-    if results["has_threat"] or results["has_fire"]:
-        _state["incidents_today"] += 1
-        event_label = " + ".join(results["threat_types"]) if results["threat_types"] else "Threat"
-        _log_event(camera, event_label, max(results["weapon_conf"], results["fire_conf"]), "active")
-    else:
-        _log_event(camera, "Image scan — no threats", None, "passed")
-
-    return {
-        "media_type": "image",
-        "camera": camera,
-        "frame_b64": frame_b64,
-        "detections": results["boxes"],
-        "has_threat": results["has_threat"],
-        "has_fire": results["has_fire"],
-        "weapon_conf": results["weapon_conf"],
-        "fire_conf": results["fire_conf"],
-        "threat_types": results["threat_types"],
-        "scene_label": scene_label,
-        "scene_conf": round(scene_conf, 2),
-        "total_detections": len(results["boxes"]),
-    }
-
-# ─────────────────────────────────────────────
-#  Video inference  (sample frames)
-# ─────────────────────────────────────────────
-
-def _process_video(path: str, camera: str, th: dict, filename: str) -> dict:
-    cap = cv2.VideoCapture(path)
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    fps = cap.get(cv2.CAP_PROP_FPS) or 30
-    duration = total_frames / fps
-    anomaly_alert = th.get("anomaly_alert_pct", 70.0)
-
-    # Try anomaly model first
-    anomaly_scores = None
-    if _anomaly_ready and _anomaly_model is not None:
-        feat_path = lookup_features(filename)
-        if feat_path:
-            try:
-                anomaly_scores = predict_anomaly(feat_path, _anomaly_model, _anomaly_device)
-                logger.info(f"Anomaly scores from dataset features: {feat_path}")
-            except Exception as e:
-                logger.warning(f"Anomaly prediction failed: {e}")
-
-    # Sample every N frames (max 60 samples for performance)
-    sample_interval = max(1, total_frames // 60)
-    frame_idx = 0
-    all_boxes = []
-    max_weapon_conf = 0.0
-    max_fire_conf = 0.0
-    max_anomaly = 0.0
-    max_violence = 0.0
-    threat_types = set()
-    worst_frame = None
-    worst_frame_boxes = []
-    worst_frame_idx = 0
-
-    scene_label, scene_conf = "No scene detected", 0.0
-
-    while cap.isOpened():
-        ret, frame = cap.read()
-        if not ret:
-            break
-
-        if frame_idx % sample_interval == 0:
-            _state["last_scan_ts"] = time.time()
-            detections = run_inference(
-                frame,
-                person_conf=th["person"],
-                weapon_conf=th["weapon"],
-                fire_conf=th["fire"],
+            frame = cv2.imread(tmp_path)
+            dets = await run_inference_async(
+                frame, 
+                person_conf=th["person"], 
+                weapon_conf=th["weapon"], 
+                fire_conf=th["fire"], 
+                road_conf=th["road"], 
+                executor=executor
             )
-            r = _analyse_detections(detections, th, frame)
+            res = _analyse_detections(dets, th, frame)
+            
+            # Scene
+            scene_l, scene_c = ("—", 0.0)
+            if _scene_analyzer:
+                scene_l, scene_c = await asyncio.to_thread(_scene_analyzer.analyze_frame, frame)
 
-            # Anomaly score for this segment vs user alert threshold
-            if anomaly_scores is not None and total_frames > 0:
-                seg_idx = min(int((frame_idx / total_frames) * 32), 31)
-                seg_score = float(anomaly_scores[seg_idx]) * 100
-                if seg_score > max_anomaly:
-                    max_anomaly = seg_score
-                if seg_score > max_violence:
-                    max_violence = seg_score
+            frame_b64 = _encode_frame_b64(frame, res["boxes"])
+            _update_state_post_process(res, scene_l, scene_c, frame_b64, file.filename)
+            total_dets = len(res.get("boxes", []))
+            return {
+                **res,
+                "media_type": "image",
+                "frame_b64": frame_b64,
+                "scene_label": scene_l,
+                "camera": camera_name,
+                "total_detections": total_dets,
+            }
+        
+        else:
+            cap = cv2.VideoCapture(tmp_path)
+            total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+            
+            # Continuous analysis: Sample every 0.3s or at least 1 frame
+            interval = max(1, int(fps * 0.3)) 
+            
+            queue = asyncio.Queue(maxsize=20)
+            results = []
+            num_workers = 3
+            
+            # Start producer and workers
+            producer = asyncio.create_task(_frame_producer(cap, interval, queue, num_workers))
+            workers = [asyncio.create_task(_inference_worker(queue, results, th, executor)) for _ in range(num_workers)]
+            
+            await asyncio.gather(producer, *workers)
+            cap.release()
 
-            # Track worst weapon frame
-            if r["weapon_conf"] > max_weapon_conf:
-                max_weapon_conf = r["weapon_conf"]
-                worst_frame = frame.copy()
-                worst_frame_boxes = r["boxes"]
-                worst_frame_idx = frame_idx
-            # Track worst fire frame (only if no weapon frame yet)
-            if r["fire_conf"] > max_fire_conf:
-                max_fire_conf = r["fire_conf"]
-                if worst_frame is None:
-                    worst_frame = frame.copy()
-                    worst_frame_boxes = r["boxes"]
-                    worst_frame_idx = frame_idx
-            # If still nothing, keep the first sampled frame
-            if worst_frame is None and frame_idx == 0:
-                worst_frame = frame.copy()
-                worst_frame_boxes = r["boxes"]
-                worst_frame_idx = frame_idx
+            if not results: return {"error": "No frames processed"}
+            results.sort(key=lambda x: x[0]) # Chronological order
 
-            threat_types.update(r["threat_types"])
-            all_boxes.extend(r["boxes"])
+            # ── Accuracy Hardening: Temporal Persistence Filter ─────────────
+            def check_persistence(type_key, min_frames=2, instant_threshold=0.98):
+                type_results = [r[2] for r in results]
+                confirmed_conf = 0.0
+                active_types = set()
+                thresh_map = {"weapon_conf": WEAPON_CONF_THRESHOLD, "fire_conf": FIRE_CONF_THRESHOLD, "road_conf": ROAD_ANOMALY_CONF_THRESHOLD}
+                current_thresh = thresh_map.get(type_key, 0.5)
 
-            # Scene every 30 samples
-            if _scene_analyzer and frame_idx % (sample_interval * 30) == 0:
-                try:
-                    scene_label, scene_conf = _scene_analyzer.analyze_frame(frame)
-                except Exception:
-                    pass
+                for i in range(len(type_results)):
+                    r_frame = type_results[i]
+                    conf = r_frame.get(type_key, 0)
+                    if conf >= instant_threshold:
+                        confirmed_conf = max(confirmed_conf, conf)
+                        active_types.add(type_key.replace("_conf", "").capitalize())
+                    elif conf >= current_thresh:
+                        # Window: 2 frames before, 2 frames after
+                        window = type_results[max(0, i-2):i+3]
+                        count = sum(1 for wr in window if wr.get(type_key, 0) >= current_thresh * 0.85)
+                        if count >= min_frames:
+                            confirmed_conf = max(confirmed_conf, conf)
+                            active_types.add(type_key.replace("_conf", "").capitalize())
+                return confirmed_conf, active_types
 
-        frame_idx += 1
+            max_w, types_w = check_persistence("weapon_conf")
+            max_f, types_f = check_persistence("fire_conf")
+            max_r, types_r = check_persistence("road_conf")
+            threat_types = types_w | types_f | types_r
+            
+            # Anomaly correlation
+            anom_score = 0.0
+            if _anomaly_ready:
+                f_path = lookup_features(file.filename)
+                if f_path:
+                    scores = predict_anomaly(f_path, _anomaly_model, _anomaly_device)
+                    anom_score = float(np.max(scores)) * 100
 
-    cap.release()
+            # Final Logic: Correlate with Anomaly Score
+            has_threat = max_w > 0 or max_r > 0
+            has_fire = max_f > 0
+            if anom_score < 30.0 and max(max_w, max_f, max_r) < 0.95:
+                # If scene is "too normal", ignore marginal detections
+                has_threat = has_fire = False
+                threat_types = []
 
-    has_threat = max_weapon_conf > 0
-    has_fire = max_fire_conf > 0
-    threat_list = list(threat_types)
+            # Visual fallback
+            worst = sorted(results, key=lambda x: (x[2]["weapon_conf"], x[2]["fire_conf"], x[2]["road_conf"]), reverse=True)[0]
+            frame_b64 = _encode_frame_b64(worst[1], worst[2]["boxes"])
 
-    # Encode the worst frame with boxes drawn on it
-    frame_b64 = ""
-    if worst_frame is not None:
-        frame_b64 = _encode_frame_b64(worst_frame, worst_frame_boxes)
+            _update_state_post_process(
+                {"weapon_conf": max_w, "fire_conf": max_f, "road_conf": max_r, "has_threat": has_threat, "has_fire": has_fire, "threat_types": list(threat_types)},
+                "—", 0.0, frame_b64, file.filename, anom_score
+            )
 
+            duration = (int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) / (cap.get(cv2.CAP_PROP_FPS) or 30.0))
+            return {
+                "media_type": "video",
+                "frame_b64": frame_b64,
+                "weapon_conf": max_w,
+                "fire_conf": max_f,
+                "road_conf": max_r,
+                "threat_types": list(threat_types),
+                "anomaly_score": anom_score,
+                "camera": camera_name,
+                "has_threat": has_threat,
+                "has_fire": has_fire,
+                "total_frames": int(cap.get(cv2.CAP_PROP_FRAME_COUNT)),
+                "duration_seconds": round(duration, 1),
+                "total_detections": sum(len(r[2].get("boxes", [])) for r in results),
+            }
+
+    finally:
+        os.unlink(tmp_path)
+
+def _update_state_post_process(res, scene_l, scene_c, b64, fname, anom=0.0):
     _state.update({
-        "weapon_conf": max_weapon_conf,
-        "fire_conf": max_fire_conf,
-        "anomaly_score": round(max_anomaly, 1),
-        "violence_score": round(max_violence, 1),
-        "scene_label": scene_label,
-        "scene_conf": scene_conf,
-        "threat_active": has_threat or has_fire,
-        "threat_type": threat_list,
+        "last_scan_ts": time.time(),
+        "weapon_conf": res.get("weapon_conf", 0),
+        "fire_conf": res.get("fire_conf", 0),
+        "road_conf": res.get("road_conf", 0),
+        "scene_label": scene_l,
+        "scene_conf": scene_c,
+        "anomaly_score": anom,
+        "threat_active": res["has_threat"] or res["has_fire"],
+        "threat_type": res["threat_types"],
+        "last_frame_b64": b64,
+        "last_filename": fname,
     })
-
-    if has_threat or has_fire:
+    if _state["threat_active"]:
         _state["incidents_today"] += 1
-        _log_event(camera, " + ".join(threat_list) if threat_list else "Threat", max(max_weapon_conf, max_fire_conf), "active")
-    else:
-        _log_event(camera, "Video scan complete — no threats", None, "passed")
-
-    return {
-        "media_type": "video",
-        "camera": camera,
-        "frame_b64": frame_b64,           # ← actual annotated worst frame
-        "total_frames": total_frames,
-        "duration_seconds": round(duration, 1),
-        "worst_frame": worst_frame_idx,
-        "has_threat": has_threat,
-        "has_fire": has_fire,
-        "weapon_conf": round(max_weapon_conf, 2),
-        "fire_conf": round(max_fire_conf, 2),
-        "anomaly_score": round(max_anomaly, 1),
-        "violence_score": round(max_violence, 1),
-        "scene_label": scene_label,
-        "scene_conf": round(scene_conf, 2),
-        "threat_types": threat_list,
-        "total_detections": len(all_boxes),
-    }
+        _log_event(_state["active_camera"], " + ".join(res["threat_types"]), max(res["weapon_conf"], res["fire_conf"], res["road_conf"]), "active")
 
 # ─────────────────────────────────────────────
-#  Shared detection analysis helper
+#  Detection & Encoding Helpers
 # ─────────────────────────────────────────────
 
-def _analyse_detections(detections, th: dict, frame) -> dict:
-    """Filter detections using per-class thresholds from `th` dict."""
+def _analyse_detections(detections, th, frame):
     h, w = frame.shape[:2]
-    has_threat = False
-    has_fire = False
-    weapon_conf = 0.0
-    fire_conf = 0.0
-    threat_types = []
-    boxes = []
-
-    person_thresh = th.get("person", 0.50)
-    weapon_thresh = th.get("weapon", 0.65)
-    fire_thresh   = th.get("fire",   0.60)
-
-    logger.info(
-        f"Thresholds — person: {person_thresh:.2f}, "
-        f"weapon: {weapon_thresh:.2f}, fire: {fire_thresh:.2f}"
-    )
-
+    res = {"has_threat": False, "has_fire": False, "weapon_conf": 0.0, "fire_conf": 0.0, "road_conf": 0.0, "threat_types": [], "boxes": []}
+    
     for det in detections:
-        cls_id, conf, x1, y1, x2, y2 = det
-        if int(cls_id) == CLASS_PERSON and conf < person_thresh:
-            continue
-        if int(cls_id) == CLASS_WEAPON and conf < weapon_thresh:
-            continue
-        if int(cls_id) == CLASS_FIRE   and conf < fire_thresh:
-            continue
+        cls, conf, x1, y1, x2, y2 = det
+        label = {CLASS_WEAPON: "weapon", CLASS_PERSON: "person", CLASS_FIRE: "fire", CLASS_ROAD_ANOMALY: "road_anomaly"}.get(int(cls), "unknown")
+        
+        res["boxes"].append({"class": label, "conf": round(conf, 2), "bbox_px": [int(x1), int(y1), int(x2), int(y2)]})
+        
+        if int(cls) == CLASS_WEAPON:
+            res["has_threat"] = True
+            res["weapon_conf"] = max(res["weapon_conf"], conf)
+            if "Weapon" not in res["threat_types"]: res["threat_types"].append("Weapon")
+        elif int(cls) == CLASS_FIRE:
+            res["has_fire"] = True
+            res["fire_conf"] = max(res["fire_conf"], conf)
+            if "Fire" not in res["threat_types"]: res["threat_types"].append("Fire")
+        elif int(cls) == CLASS_ROAD_ANOMALY:
+            res["has_threat"] = True
+            res["road_conf"] = max(res["road_conf"], conf)
+            if "Road Anomaly" not in res["threat_types"]: res["threat_types"].append("Road Anomaly")
+            
+    return res
 
-        label = {CLASS_WEAPON: "weapon", CLASS_PERSON: "person", CLASS_FIRE: "fire"}.get(int(cls_id), "unknown")
+_COLORS = {"weapon": (0,0,220), "fire": (0,120,240), "person": (220,80,0), "road_anomaly": (147,51,234)}
 
-        boxes.append({
-            "class": label,
-            "conf": round(float(conf), 2),
-            # Normalised [0-1] coords for the frontend overlay
-            "bbox": [
-                round(x1 / w, 4), round(y1 / h, 4),
-                round(x2 / w, 4), round(y2 / h, 4),
-            ],
-            # Absolute pixel coords so we can draw on the frame server-side
-            "bbox_px": [int(x1), int(y1), int(x2), int(y2)],
-        })
-
-        if int(cls_id) == CLASS_WEAPON:
-            has_threat = True
-            weapon_conf = max(weapon_conf, conf)
-            if "Weapon" not in threat_types:
-                threat_types.append("Weapon")
-        elif int(cls_id) == CLASS_FIRE:
-            has_fire = True
-            fire_conf = max(fire_conf, conf)
-            if "Fire" not in threat_types:
-                threat_types.append("Fire")
-
-    return {
-        "has_threat": has_threat,
-        "has_fire": has_fire,
-        "weapon_conf": round(float(weapon_conf), 2),
-        "fire_conf": round(float(fire_conf), 2),
-        "threat_types": threat_types,
-        "boxes": boxes,
-    }
-
-
-# ─────────────────────────────────────────────
-#  Draw boxes on frame → base64 JPEG
-# ─────────────────────────────────────────────
-
-# Colours per class (BGR)
-_COLORS = {
-    "weapon": (0,   0,   220),   # red
-    "fire":   (0,   120, 240),   # orange
-    "person": (220, 80,  0),     # blue
-}
-
-def _encode_frame_b64(frame: np.ndarray, boxes: list, quality: int = 80) -> str:
-    """
-    Draw bounding boxes on a copy of `frame`, encode as JPEG, return base64 string.
-    `boxes` is the list from _analyse_detections (with bbox_px keys).
-    """
+def _encode_frame_b64(frame, boxes):
     out = frame.copy()
     h, w = out.shape[:2]
-
-    # Resize if very large to keep response lean (max 1280px wide)
     if w > 1280:
         scale = 1280 / w
-        out = cv2.resize(out, (1280, int(h * scale)), interpolation=cv2.INTER_AREA)
-        h, w = out.shape[:2]
-
+        out = cv2.resize(out, (1280, int(h * scale)))
+    
     for det in boxes:
-        cls   = det["class"]
-        conf  = det["conf"]
-        color = _COLORS.get(cls, (180, 180, 180))
+        color = _COLORS.get(det["class"], (180,180,180))
+        x1, y1, x2, y2 = det["bbox_px"]
+        # Basic scale adjust if resized
+        if w > 1280:
+            s = 1280/w
+            x1, y1, x2, y2 = int(x1*s), int(y1*s), int(x2*s), int(y2*s)
+        
+        cv2.rectangle(out, (x1,y1), (x2,y2), color, 2)
+        cv2.putText(out, f"{det['class']} {det['conf']:.2f}", (x1, y1-5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
 
-        # Use pixel coords if available, else fall back to normalised
-        if "bbox_px" in det:
-            x1, y1, x2, y2 = det["bbox_px"]
-            # Scale if we resized
-            orig_h = frame.shape[0]
-            orig_w = frame.shape[1]
-            if orig_w > 1280:
-                sf = 1280 / orig_w
-                x1 = int(x1 * sf); y1 = int(y1 * sf)
-                x2 = int(x2 * sf); y2 = int(y2 * sf)
-        else:
-            n = det["bbox"]
-            x1, y1, x2, y2 = int(n[0]*w), int(n[1]*h), int(n[2]*w), int(n[3]*h)
+    _, buf = cv2.imencode(".jpg", out, [cv2.IMWRITE_JPEG_QUALITY, 80])
+    return "data:image/jpeg;base64," + base64.b64encode(buf).decode()
 
-        cv2.rectangle(out, (x1, y1), (x2, y2), color, 2)
-        label = f"{cls} {conf:.2f}"
-        (lw, lh), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.55, 1)
-        # Label background
-        cv2.rectangle(out, (x1, y1 - lh - 6), (x1 + lw + 4, y1), color, -1)
-        cv2.putText(out, label, (x1 + 2, y1 - 4),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 255, 255), 1, cv2.LINE_AA)
 
-    ok, buf = cv2.imencode(".jpg", out, [cv2.IMWRITE_JPEG_QUALITY, quality])
-    if not ok:
-        return ""
-    return "data:image/jpeg;base64," + base64.b64encode(buf.tobytes()).decode("utf-8")
+# (Removed duplicate definition)
 
-# ─────────────────────────────────────────────
-#  Startup check log
-# ─────────────────────────────────────────────
+@app.get("/api/last_frame")
+def get_last_frame():
+    return {"frame_b64": _state["last_frame_b64"], "filename": _state["last_filename"], "camera": _state["active_camera"], "threat_active": _state["threat_active"], "threat_type": _state["threat_type"], "has_frame": bool(_state["last_frame_b64"])}
+
+@app.post("/api/dispatch")
+def trigger_dispatch(camera: str = "—", threat_type: str = "Unknown"):
+    _state["dispatch_count"] += 1
+    ts = datetime.now().strftime("%H:%M:%S")
+    _log_event(camera, f"🚨 Emergency dispatch #{_state['dispatch_count']}", None, "dispatched")
+    return {"dispatched": True, "dispatch_no": _state["dispatch_count"], "timestamp": ts}
 
 @app.on_event("startup")
 def on_startup():
-    logger.info("=== Jerico API Server started ===")
-    logger.info(f"  YOLO:    {'✅' if _models_loaded else '❌'}")
-    logger.info(f"  Anomaly: {'✅' if _anomaly_ready else '❌'}")
-    logger.info(f"  Scene:   {'✅' if _scene_ready else '❌'}")
-    _log_event("—", "API server started", None, "info")
+    logger.info("=== Jerico API v2.0 Started ===")
+    logger.info(f"  Models: Person & Weapon={'✅' if person_model and weapon_model else '❌'}, Fire={'✅' if fire_model else '❌'}, Road={'✅' if road_model else '❌'}")
+
+@app.on_event("shutdown")
+def on_shutdown():
+    logger.info("=== Jerico API v2.0 Shutting Down ===")
+    get_executor().shutdown(wait=False, cancel_futures=True)
+    logger.info("Worker pool shutdown complete.")

@@ -4,7 +4,7 @@
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Jerico — Dashboard</title>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet"/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet"/>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -12,97 +12,146 @@
       --text: #18181b; --muted: #71717a; --subtle: #f4f4f5;
       --green: #16a34a; --green-bg: #f0fdf4; --green-border: #bbf7d0;
       --red: #dc2626; --red-bg: #fef2f2; --red-border: #fecaca;
-      --orange: #ea580c; --sidebar-w: 200px;
+      --orange: #ea580c; --orange-bg: #fff7ed; --orange-border: #fed7aa;
+      --blue: #2563eb; --sidebar-w: 208px;
     }
     body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.5; min-height: 100vh; display: flex; flex-direction: column; }
 
+    /* ── NAV ── */
     nav { position: fixed; top: 0; left: 0; right: 0; height: 52px; background: var(--surface); border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; padding: 0 24px; z-index: 100; }
-    .nav-logo { font-weight: 600; font-size: 15px; letter-spacing: -0.3px; }
+    .nav-logo { font-weight: 700; font-size: 15px; letter-spacing: -0.4px; display: flex; align-items: center; gap: 8px; }
+    .nav-logo-icon { width: 22px; height: 22px; background: var(--text); border-radius: 5px; display: flex; align-items: center; justify-content: center; }
+    .nav-logo-icon svg { width: 13px; height: 13px; color: #fff; }
     .nav-right { display: flex; align-items: center; gap: 16px; }
     .status-badge { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 500; }
-    .status-dot { width: 7px; height: 7px; border-radius: 50%; }
+    .status-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
     .btn-primary { background: var(--text); color: #fff; border: none; padding: 7px 14px; font-family: inherit; font-size: 13px; font-weight: 500; border-radius: 6px; cursor: pointer; text-decoration: none; display: inline-block; }
     .btn-primary:hover { background: #27272a; }
 
+    /* ── LAYOUT ── */
     .layout { display: flex; padding-top: 52px; min-height: 100vh; }
 
-    aside { position: fixed; top: 52px; left: 0; width: var(--sidebar-w); height: calc(100vh - 52px); background: var(--surface); border-right: 1px solid var(--border); padding: 20px 0; display: flex; flex-direction: column; overflow-y: auto; }
-    .sidebar-section { padding: 0 12px 16px; }
-    .sidebar-label { font-size: 11px; color: var(--muted); font-weight: 500; padding: 0 8px; margin-bottom: 4px; }
-    .nav-item { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 6px; color: var(--muted); font-size: 13px; font-weight: 500; cursor: pointer; text-decoration: none; }
+    /* ── SIDEBAR ── */
+    aside { position: fixed; top: 52px; left: 0; width: var(--sidebar-w); height: calc(100vh - 52px); background: var(--surface); border-right: 1px solid var(--border); padding: 16px 0; display: flex; flex-direction: column; overflow-y: auto; }
+    .sidebar-section { padding: 0 10px 16px; }
+    .sidebar-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); font-weight: 600; padding: 0 8px; margin-bottom: 6px; }
+    .nav-item { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 6px; color: var(--muted); font-size: 13px; font-weight: 500; cursor: pointer; text-decoration: none; transition: background 0.15s, color 0.15s; }
     .nav-item:hover { background: var(--subtle); color: var(--text); }
     .nav-item.active { background: var(--subtle); color: var(--text); }
     .nav-item svg { width: 15px; height: 15px; flex-shrink: 0; }
+    .sidebar-divider { border: none; border-top: 1px solid var(--border); margin: 0 10px 16px; }
 
-    main { margin-left: var(--sidebar-w); flex: 1; padding: 32px; max-width: 1100px; }
-    .page-title { font-size: 18px; font-weight: 600; margin-bottom: 6px; }
-    .page-sub { font-size: 13px; color: var(--muted); margin-bottom: 28px; }
+    /* Model health in sidebar */
+    .model-list { display: flex; flex-direction: column; gap: 6px; padding: 0 8px; }
+    .model-row { display: flex; justify-content: space-between; align-items: center; font-size: 12px; }
+    .model-name { color: var(--muted); }
+    .model-status { font-weight: 600; font-size: 11px; }
+    .model-status.ok  { color: var(--green); }
+    .model-status.err { color: var(--red); }
+    .model-status.loading { color: var(--muted); }
+    .weights-ts { font-size: 10px; color: var(--muted); padding: 8px 8px 0; }
 
-    .notice { border-radius: 8px; padding: 12px 16px; display: flex; align-items: center; gap: 10px; font-size: 13px; margin-bottom: 24px; border: 1px solid; }
-    .notice.safe { background: var(--green-bg); border-color: var(--green-border); color: var(--green); }
-    .notice.threat { background: var(--red-bg); border-color: var(--red-border); color: var(--red); }
-    .notice svg { width: 16px; height: 16px; flex-shrink: 0; }
+    /* ── MAIN ── */
+    main { margin-left: var(--sidebar-w); flex: 1; padding: 28px 32px; max-width: 1140px; }
+    .page-header { margin-bottom: 24px; }
+    .page-title { font-size: 18px; font-weight: 700; margin-bottom: 4px; letter-spacing: -0.3px; }
+    .page-sub { font-size: 13px; color: var(--muted); }
 
-    .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 28px; }
-    .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 18px 20px; }
-    .stat-label { font-size: 12px; color: var(--muted); margin-bottom: 8px; font-weight: 500; }
-    .stat-value { font-size: 26px; font-weight: 600; letter-spacing: -0.5px; transition: color 0.3s; }
-    .stat-sub { font-size: 11px; color: var(--muted); margin-top: 4px; }
+    /* ── NOTICE BANNER ── */
+    .notice { border-radius: 8px; padding: 11px 16px; display: flex; align-items: center; gap: 10px; font-size: 13px; font-weight: 500; margin-bottom: 22px; border: 1px solid; transition: all 0.3s; }
+    .notice svg { width: 15px; height: 15px; flex-shrink: 0; }
+    .notice.safe    { background: var(--green-bg); border-color: var(--green-border); color: var(--green); }
+    .notice.threat  { background: var(--red-bg);   border-color: var(--red-border);   color: var(--red);   }
+    .notice.offline { background: var(--subtle);    border-color: var(--border);       color: var(--muted); }
+
+    /* ── STAT CARDS ── */
+    .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 24px; }
+    .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px 20px; transition: border-color 0.3s; }
+    .stat-card.alert { border-color: var(--red-border); background: var(--red-bg); }
+    .stat-label { font-size: 11px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+    .stat-value { font-size: 26px; font-weight: 700; letter-spacing: -0.8px; transition: color 0.3s; }
+    .stat-sub { font-size: 11px; color: var(--muted); margin-top: 3px; }
     .stat-value.threat { color: var(--red); }
-    .stat-value.safe { color: var(--green); }
+    .stat-value.warn   { color: var(--orange); }
+    .stat-value.safe   { color: var(--green); }
 
-    .two-col { display: grid; grid-template-columns: 1fr 300px; gap: 20px; margin-bottom: 28px; }
-    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
-    .card-header { padding: 14px 18px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+    /* ── TWO-COL ── */
+    .two-col { display: grid; grid-template-columns: 1fr 300px; gap: 18px; margin-bottom: 22px; }
+
+    /* ── CARD ── */
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; transition: border-color 0.3s; }
+    .card.threat-card { border-color: var(--red-border); }
+    .card-header { padding: 13px 18px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
     .card-title { font-size: 13px; font-weight: 600; }
-    .card-meta { font-size: 12px; color: var(--muted); }
-    .feed-placeholder { height: 300px; background: var(--subtle); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: #a1a1aa; }
-    .feed-placeholder svg { width: 36px; height: 36px; }
-    .feed-placeholder span { font-size: 13px; }
+    .card-meta  { font-size: 12px; color: var(--muted); }
 
-    .analysis-row { display: flex; justify-content: space-between; align-items: center; padding: 11px 18px; border-bottom: 1px solid var(--border); }
+    /* ── CAMERA FEED ── */
+    .camera-wrap { position: relative; background: #111; min-height: 300px; overflow: hidden; }
+    .camera-wrap img { width: 100%; display: block; object-fit: contain; min-height: 300px; }
+    .camera-placeholder { min-height: 300px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: #52525b; background: #111; }
+    .camera-placeholder svg { width: 40px; height: 40px; opacity: 0.4; }
+    .camera-placeholder span { font-size: 13px; opacity: 0.6; }
+    /* Threat overlay on camera */
+    .threat-overlay { position: absolute; inset: 0; border: 3px solid var(--red); pointer-events: none; animation: borderPulse 1s ease-in-out infinite; display: none; }
+    .threat-overlay.visible { display: block; }
+    @keyframes borderPulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+    /* Camera bar */
+    .camera-bar { position: absolute; bottom: 0; left: 0; right: 0; background: rgba(0,0,0,0.6); color: #fff; font-size: 11px; padding: 7px 14px; display: flex; justify-content: space-between; align-items: center; backdrop-filter: blur(4px); }
+    .camera-bar-threat { color: #fca5a5; font-weight: 600; }
+    .camera-bar-safe   { color: #86efac; }
+    /* Live dot on camera */
+    .live-pip { display: flex; align-items: center; gap: 5px; font-size: 10px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; }
+    .live-pip .dot { width: 6px; height: 6px; border-radius: 50%; background: #ef4444; }
+
+    /* ── ANALYSIS PANEL ── */
+    .analysis-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 18px; border-bottom: 1px solid var(--border); }
     .analysis-row:last-child { border-bottom: none; }
-    .analysis-key { font-size: 13px; color: var(--muted); }
-    .analysis-val { font-size: 13px; font-weight: 500; }
-    .badge { font-size: 11px; font-weight: 500; padding: 2px 8px; border-radius: 20px; border: 1px solid; }
-    .badge.safe { background: var(--green-bg); color: var(--green); border-color: var(--green-border); }
-    .badge.threat { background: var(--red-bg); color: var(--red); border-color: var(--red-border); }
+    .analysis-key { font-size: 12px; color: var(--muted); font-weight: 500; }
+    .analysis-val { font-size: 13px; font-weight: 600; }
 
+    /* ── BADGES ── */
+    .badge { font-size: 11px; font-weight: 600; padding: 2px 9px; border-radius: 20px; border: 1px solid; }
+    .badge.safe   { background: var(--green-bg); color: var(--green); border-color: var(--green-border); }
+    .badge.threat { background: var(--red-bg);   color: var(--red);   border-color: var(--red-border);   }
+    .badge.warn   { background: var(--orange-bg); color: var(--orange); border-color: var(--orange-border); }
+
+    /* ── EVENT TABLE ── */
     .table-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
     table { width: 100%; border-collapse: collapse; }
-    thead th { text-align: left; padding: 10px 18px; font-size: 11px; font-weight: 500; color: var(--muted); border-bottom: 1px solid var(--border); background: var(--subtle); }
-    tbody tr { border-bottom: 1px solid var(--border); }
+    thead th { text-align: left; padding: 10px 18px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.4px; color: var(--muted); border-bottom: 1px solid var(--border); background: var(--subtle); }
+    tbody tr { border-bottom: 1px solid var(--border); transition: background 0.1s; }
     tbody tr:last-child { border-bottom: none; }
     tbody tr:hover { background: var(--subtle); }
     tbody td { padding: 11px 18px; font-size: 13px; color: var(--text); }
-    .td-muted { color: var(--muted); }
-    .badge-active { background: var(--red); color: white; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 20px; }
+    .td-muted { color: var(--muted); font-variant-numeric: tabular-nums; }
+    .badge-dispatched { background: #7c3aed; color: #fff; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 20px; }
+    .badge-active { background: var(--red); color: #fff; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 20px; }
 
-    /* Model health dots */
-    .model-row { display: flex; justify-content: space-between; font-size: 12px; padding: 0 8px; }
-    .model-status { font-weight: 500; }
-    .model-status.ok { color: var(--green); }
-    .model-status.err { color: var(--red); }
-    .model-status.loading { color: var(--muted); }
-
-    /* Spin animation for loading */
-    @keyframes spin { to { transform: rotate(360deg); } }
-    .spin { animation: spin 1s linear infinite; display: inline-block; }
-
-    /* Pulse for live dot */
-    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+    /* ── ANIMATIONS ── */
+    @keyframes spin    { to { transform: rotate(360deg); } }
+    @keyframes pulse   { 0%,100%{opacity:1} 50%{opacity:0.3} }
     .pulse { animation: pulse 2s ease-in-out infinite; }
+
+    /* ── OFFLINE PILL ── */
+    .offline-pill { background: var(--subtle); border: 1px solid var(--border); color: var(--muted); font-size: 11px; font-weight: 500; padding: 2px 10px; border-radius: 20px; display: none; }
+    .offline-pill.visible { display: inline-block; }
   </style>
 </head>
 <body>
 
 <nav>
-  <span class="nav-logo">Jerico</span>
+  <div class="nav-logo">
+    <div class="nav-logo-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+    </div>
+    Jerico
+  </div>
   <div class="nav-right">
     <div class="status-badge" id="globalStatus">
       <div class="status-dot pulse" id="statusDot" style="background:var(--muted)"></div>
-      <span id="statusText">Connecting...</span>
+      <span id="statusText" style="color:var(--muted)">Connecting...</span>
     </div>
+    <span class="offline-pill" id="offlinePill">API Offline</span>
     <a href="upload.html" class="btn-primary">Upload footage</a>
   </div>
 </nav>
@@ -119,77 +168,95 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
         Upload
       </a>
-      <a href="#" class="nav-item">
+      <a href="alert.html" class="nav-item">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
         Alerts
       </a>
-      <a href="#" class="nav-item">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41M20 12h-2M17.66 17.66l-1.41-1.41M12 20v-2M6.34 17.66l1.41-1.41M4 12h2M6.34 6.34l1.41 1.41"/></svg>
-        Settings
-      </a>
     </div>
-    <div class="sidebar-section" style="border-top:1px solid var(--border); padding-top:16px; margin-top:auto;">
+
+    <hr class="sidebar-divider"/>
+
+    <div class="sidebar-section" style="margin-top:auto;">
       <div class="sidebar-label">Model health</div>
-      <div style="display:flex; flex-direction:column; gap:8px;" id="modelHealth">
-        <div class="model-row"><span style="color:var(--muted)">YOLOv8</span><span class="model-status loading">—</span></div>
-        <div class="model-row"><span style="color:var(--muted)">Anomaly</span><span class="model-status loading">—</span></div>
-        <div class="model-row"><span style="color:var(--muted)">CLIP Scene</span><span class="model-status loading">—</span></div>
-        <div class="model-row"><span style="color:var(--muted)">Fire Detect</span><span class="model-status loading">—</span></div>
+      <div class="model-list" id="modelHealth">
+        <div class="model-row"><span class="model-name">YOLOv8</span><span class="model-status loading">—</span></div>
+        <div class="model-row"><span class="model-name">Fire Detection</span><span class="model-status loading">—</span></div>
+        <div class="model-row"><span class="model-name">Road Anomaly</span><span class="model-status loading">—</span></div>
+        <div class="model-row"><span class="model-name">Social Anomaly</span><span class="model-status loading">—</span></div>
+        <div class="model-row"><span class="model-name">CLIP Scene</span><span class="model-status loading">—</span></div>
       </div>
-      <div id="weightsUpdated" style="font-size:11px; color:var(--muted); padding:8px 8px 0;"></div>
     </div>
   </aside>
 
   <main>
-    <h1 class="page-title">Overview</h1>
-    <p class="page-sub">Real-time threat detection — live from AI models.</p>
-
-    <!-- Status notice -->
-    <div class="notice safe" id="noticeBox">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-      <span id="noticeText">Connecting to Jerico API...</span>
+    <div class="page-header">
+      <h1 class="page-title">Overview</h1>
+      <p class="page-sub">Real-time threat detection — live AI analysis.</p>
     </div>
 
-    <!-- Stats -->
+    <!-- Status notice -->
+    <div class="notice offline" id="noticeBox">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      <span id="noticeText">Connecting to Jerico API on port 8000…</span>
+    </div>
+
+    <!-- Stat cards -->
     <div class="stats-grid">
-      <div class="stat-card">
+      <div class="stat-card" id="cardModels">
         <div class="stat-label">Models active</div>
         <div class="stat-value" id="statModels">—</div>
-        <div class="stat-sub" id="statModelsub"></div>
+        <div class="stat-sub" id="statModelSub"></div>
       </div>
-      <div class="stat-card">
+      <div class="stat-card" id="cardIncidents">
         <div class="stat-label">Incidents today</div>
         <div class="stat-value" id="statIncidents">—</div>
         <div class="stat-sub" id="statIncidentSub"></div>
       </div>
       <div class="stat-card">
         <div class="stat-label">Last scan</div>
-        <div class="stat-value" id="statLastScan" style="font-size:18px;">—</div>
+        <div class="stat-value" id="statLastScan" style="font-size:18px; padding-top:4px;">—</div>
         <div class="stat-sub">Continuous monitoring</div>
       </div>
-      <div class="stat-card">
+      <div class="stat-card" id="cardAnomaly">
         <div class="stat-label">Anomaly score</div>
         <div class="stat-value" id="statAnomaly">—</div>
         <div class="stat-sub" id="statAnomalySub"></div>
       </div>
     </div>
 
-    <!-- Camera + Analysis -->
+    <!-- Camera feed + analysis panel -->
     <div class="two-col">
-      <div class="card">
+      <!-- Camera -->
+      <div class="card" id="cameraCard">
         <div class="card-header">
-          <span class="card-title" id="cameraLabel">Camera</span>
+          <span class="card-title" id="cameraLabel">Live feed</span>
           <span class="card-meta" id="cameraStatus">Awaiting footage</span>
         </div>
-        <div class="feed-placeholder">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-            <path d="M15 10l4.553-2.069A1 1 0 0 1 21 8.878v6.244a1 1 0 0 1-1.447.894L15 14M3 8a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8z"/>
-          </svg>
-          <span>Upload footage to begin analysis</span>
+        <div class="camera-wrap" id="cameraWrap">
+          <!-- Annotated frame populated by JS -->
+          <img id="cameraImg" style="display:none;" alt="Live annotated frame"/>
+          <!-- Placeholder shown when no frame yet -->
+          <div class="camera-placeholder" id="cameraPlaceholder">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M15 10l4.553-2.069A1 1 0 0 1 21 8.878v6.244a1 1 0 0 1-1.447.894L15 14M3 8a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8z"/>
+            </svg>
+            <span>Upload footage to see live analysis</span>
+          </div>
+          <!-- Red threat border pulse -->
+          <div class="threat-overlay" id="threatOverlay"></div>
+          <!-- Bottom bar -->
+          <div class="camera-bar" id="cameraBar" style="display:none;">
+            <span id="cameraBarLeft">—</span>
+            <div class="live-pip">
+              <div class="dot pulse"></div>
+              <span id="cameraBarRight" class="camera-bar-safe">Analysed</span>
+            </div>
+          </div>
         </div>
       </div>
 
-      <div class="card">
+      <!-- Analysis -->
+      <div class="card" id="analysisCard">
         <div class="card-header"><span class="card-title">Live analysis</span></div>
         <div class="analysis-row">
           <span class="analysis-key">Threat status</span>
@@ -201,19 +268,27 @@
         </div>
         <div class="analysis-row">
           <span class="analysis-key">Weapon confidence</span>
-          <span class="analysis-val" id="weaponConf">—</span>
+          <span class="analysis-val" id="weaponConf">0.00</span>
         </div>
         <div class="analysis-row">
           <span class="analysis-key">Fire confidence</span>
-          <span class="analysis-val" id="fireConf">—</span>
+          <span class="analysis-val" id="fireConf">0.00</span>
+        </div>
+        <div class="analysis-row">
+          <span class="analysis-key">Road anomaly conf</span>
+          <span class="analysis-val" id="roadConf">0.00</span>
         </div>
         <div class="analysis-row">
           <span class="analysis-key">Violence score</span>
           <span class="analysis-val" id="violenceScore">—</span>
         </div>
         <div class="analysis-row">
+          <span class="analysis-key">Active camera</span>
+          <span class="analysis-val" id="activeCamera">—</span>
+        </div>
+        <div class="analysis-row">
           <span class="analysis-key">Scene</span>
-          <span class="analysis-val" id="sceneLabel">—</span>
+          <span class="analysis-val" id="sceneLabel" style="font-size:11px; max-width:160px; text-align:right;">—</span>
         </div>
       </div>
     </div>
@@ -229,7 +304,7 @@
           <tr><th>Time</th><th>Camera</th><th>Event</th><th>Confidence</th><th>Status</th></tr>
         </thead>
         <tbody id="eventTable">
-          <tr><td colspan="5" style="text-align:center; padding:20px; color:var(--muted);">Waiting for events...</td></tr>
+          <tr><td colspan="5" style="text-align:center; padding:24px; color:var(--muted);">Waiting for events…</td></tr>
         </tbody>
       </table>
     </div>
@@ -239,108 +314,167 @@
 <script>
   const API = 'http://localhost:8000/api';
   let connected = false;
+  let lastFrameUrl = '';
 
-  // ── Status helpers ──
-  function setStatus(safe, text) {
-    const dot = document.getElementById('statusDot');
-    const txt = document.getElementById('statusText');
-    const nb  = document.getElementById('noticeBox');
-    const nt  = document.getElementById('noticeText');
-    dot.style.background = safe ? 'var(--green)' : 'var(--red)';
+  // ── Helpers ──────────────────────────────────────────────────────────────
+  function setStatus(mode, text) {
+    // mode: 'safe' | 'threat' | 'offline'
+    const dot  = document.getElementById('statusDot');
+    const txt  = document.getElementById('statusText');
+    const nb   = document.getElementById('noticeBox');
+    const nt   = document.getElementById('noticeText');
+    const pill = document.getElementById('offlinePill');
+
+    const colors = { safe:'var(--green)', threat:'var(--red)', offline:'var(--muted)' };
+    const icons  = {
+      safe:    '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',
+      threat:  '<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>',
+      offline: '<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>',
+    };
+    dot.style.background = colors[mode];
     txt.textContent = text;
-    txt.style.color = safe ? 'var(--green)' : 'var(--red)';
-    nb.className = 'notice ' + (safe ? 'safe' : 'threat');
+    txt.style.color = colors[mode];
+    nb.className = 'notice ' + mode;
+    nb.querySelector('svg').innerHTML = icons[mode];
     nt.textContent = text;
+    pill.classList.toggle('visible', mode === 'offline');
   }
 
-  // ── Model health ──
+  // ── Model health ─────────────────────────────────────────────────────────
   async function loadStatus() {
     try {
-      const r = await fetch(`${API}/status`);
+      const r = await fetch(`${API}/status`, { signal: AbortSignal.timeout(4000) });
+      if (!r.ok) throw new Error();
       const d = await r.json();
       const models = [
-        ['YOLOv8', d.yolo],
-        ['Anomaly', d.anomaly],
-        ['CLIP Scene', d.scene],
-        ['Fire Detect', d.fire],
+        ['YOLOv8',      d.yolo],
+        ['Fire Detection', d.fire],
+        ['Road Anomaly', d.road],
+        ['Social Anomaly', d.anomaly],
+        ['CLIP Scene',  d.scene],
       ];
-      const mh = document.getElementById('modelHealth');
-      mh.innerHTML = models.map(([name, m]) => `
+      document.getElementById('modelHealth').innerHTML = models.map(([name, m]) => `
         <div class="model-row">
-          <span style="color:var(--muted)">${name}</span>
-          <span class="model-status ${m.ready ? 'ok' : 'err'}">${m.ready ? 'Ready' : 'Error'}</span>
+          <span class="model-name">${name}</span>
+          <span class="model-status ${m && m.ready ? 'ok' : 'err'}">${m && m.ready ? '● Ready' : '✕ Error'}</span>
         </div>`).join('');
-
-      const active = models.filter(([,m]) => m.ready).length;
-      document.getElementById('statModels').textContent = `${active}/4`;
-      document.getElementById('statModelsub').textContent = active === 4 ? 'All running' : `${4-active} unavailable`;
+      const active = models.filter(([, m]) => m && m.ready).length;
+      document.getElementById('statModels').textContent  = `${active}/5`;
+      document.getElementById('statModelSub').textContent = active === 5 ? 'All running' : `${5 - active} unavailable`;
       document.getElementById('weightsUpdated').textContent = `Weights: ${d.weights_updated}`;
-    } catch(e) {}
+    } catch { /* API offline – sidebar stays at dashes */ }
   }
 
-  // ── Metrics poll ──
-  function updateMetrics(m) {
-    const threat = m.threat_active;
+  // ── Camera feed (polls /api/last_frame every 3 s) ─────────────────────
+  async function refreshCameraFeed() {
+    try {
+      const r = await fetch(`${API}/last_frame`, { signal: AbortSignal.timeout(4000) });
+      if (!r.ok) return;
+      const d = await r.json();
 
-    // Global status
+      const img         = document.getElementById('cameraImg');
+      const placeholder = document.getElementById('cameraPlaceholder');
+      const bar         = document.getElementById('cameraBar');
+      const overlay     = document.getElementById('threatOverlay');
+      const cameraCard  = document.getElementById('cameraCard');
+
+      if (d.has_frame && d.frame_b64) {
+        if (d.frame_b64 !== lastFrameUrl) {
+          lastFrameUrl = d.frame_b64;
+          img.src = d.frame_b64;
+        }
+        img.style.display         = 'block';
+        placeholder.style.display = 'none';
+        bar.style.display         = 'flex';
+
+        // Threat overlay
+        const hasThreat = d.threat_active;
+        overlay.classList.toggle('visible', hasThreat);
+        cameraCard.classList.toggle('threat-card', hasThreat);
+
+        // Bar labels
+        document.getElementById('cameraBarLeft').textContent =
+          `${d.camera}  ·  ${d.filename}`;
+        const statusEl = document.getElementById('cameraBarRight');
+        if (hasThreat) {
+          statusEl.textContent  = '⚠ Threat detected';
+          statusEl.className    = 'camera-bar-threat';
+        } else {
+          statusEl.textContent  = '✓ Analysed';
+          statusEl.className    = 'camera-bar-safe';
+        }
+
+        // Update header
+        document.getElementById('cameraLabel').textContent  = d.camera || 'Camera feed';
+        document.getElementById('cameraStatus').textContent = d.filename || '';
+      }
+    } catch { /* silent – SSE error handler covers this */ }
+  }
+
+  // ── SSE metrics update ────────────────────────────────────────────────
+  function updateMetrics(m) {
     if (!connected) {
       connected = true;
-      setStatus(true, 'All systems normal');
+      setStatus('safe', 'All systems normal');
     }
-    if (threat) {
-      setStatus(false, `Threat active — ${m.active_camera}`);
+    if (m.threat_active) {
+      setStatus('threat', `Threat active — ${m.active_camera}`);
     } else {
-      setStatus(true, 'All systems normal');
+      setStatus('safe', 'All systems normal');
     }
 
-    // Stats
-    document.getElementById('statIncidents').textContent = m.incidents_today;
-    document.getElementById('statIncidentSub').textContent = m.incidents_today === 0 ? 'No alerts fired' : 'Alert(s) fired today';
+    // Stat cards
+    document.getElementById('statIncidents').textContent    = m.incidents_today;
+    document.getElementById('statIncidentSub').textContent  = m.incidents_today === 0 ? 'No alerts fired' : 'Alert(s) fired today';
+    document.getElementById('cardIncidents').classList.toggle('alert', m.incidents_today > 0);
+
     document.getElementById('statLastScan').textContent = m.last_scan;
 
-    const anomEl = document.getElementById('statAnomaly');
+    const anomEl  = document.getElementById('statAnomaly');
     anomEl.textContent = m.anomaly_score > 0 ? m.anomaly_score + '%' : '—';
-    anomEl.className = 'stat-value ' + (m.anomaly_score > 70 ? 'threat' : '');
+    anomEl.className   = 'stat-value ' + (m.anomaly_score > 70 ? 'threat' : m.anomaly_score > 40 ? 'warn' : '');
+    document.getElementById('statAnomalySub').textContent = m.anomaly_score > 70 ? 'High risk' : m.anomaly_score > 40 ? 'Elevated' : 'Normal';
 
     // Analysis panel
-    const ts = document.getElementById('threatStatus');
-    ts.textContent = threat ? 'Threat active' : 'Secure';
-    ts.className = 'badge ' + (threat ? 'threat' : 'safe');
+    const ts  = document.getElementById('threatStatus');
+    ts.textContent = m.threat_active ? 'Threat active' : 'Secure';
+    ts.className   = 'badge ' + (m.threat_active ? 'threat' : 'safe');
 
-    document.getElementById('threatsDetected').textContent =
-      m.threat_type.length > 0 ? m.threat_type.join(' + ') : 'None';
-    document.getElementById('weaponConf').textContent =
-      m.weapon_conf > 0 ? m.weapon_conf.toFixed(2) : '0.00';
-    document.getElementById('fireConf').textContent =
-      m.fire_conf > 0 ? m.fire_conf.toFixed(2) : '0.00';
-    document.getElementById('violenceScore').textContent =
-      m.violence_score > 0 ? m.violence_score.toFixed(1) + '%' : '—';
-    document.getElementById('sceneLabel').textContent =
-      m.scene_label || '—';
+    document.getElementById('threatsDetected').textContent = m.threat_type.length > 0 ? m.threat_type.join(' + ') : 'None';
+    document.getElementById('weaponConf').textContent      = m.weapon_conf > 0 ? m.weapon_conf.toFixed(2) : '0.00';
+    document.getElementById('fireConf').textContent        = m.fire_conf > 0   ? m.fire_conf.toFixed(2)   : '0.00';
+    document.getElementById('roadConf').textContent        = m.road_conf > 0   ? m.road_conf.toFixed(2)   : '0.00';
+    document.getElementById('violenceScore').textContent   = m.violence_score > 0 ? m.violence_score.toFixed(1) + '%' : '—';
+    document.getElementById('activeCamera').textContent    = m.active_camera || '—';
+    document.getElementById('sceneLabel').textContent      = m.scene_label && m.scene_label !== 'No footage analysed' ? m.scene_label : '—';
 
-    // Camera label
-    document.getElementById('cameraLabel').textContent = m.active_camera || 'Camera';
-    document.getElementById('cameraStatus').textContent =
-      m.last_scan === 'Never' ? 'Awaiting footage' : `Last scan: ${m.last_scan}`;
+    // Refresh camera feed whenever metrics update
+    refreshCameraFeed();
   }
 
   function updateEvents(events) {
-    const tbody = document.getElementById('eventTable');
     if (!events || events.length === 0) return;
-    document.getElementById('eventCount').textContent = `${events.length} events`;
-    tbody.innerHTML = events.map(e => `
-      <tr>
+    document.getElementById('eventCount').textContent = `${events.length} event${events.length !== 1 ? 's' : ''}`;
+    document.getElementById('eventTable').innerHTML = events.map(e => {
+      let statusHtml;
+      if (e.status === 'active') {
+        statusHtml = '<span class="badge-active">Active</span>';
+      } else if (e.status === 'dispatched') {
+        statusHtml = '<span class="badge-dispatched">Dispatched</span>';
+      } else {
+        statusHtml = `<span class="badge safe">${e.status}</span>`;
+      }
+      return `<tr>
         <td class="td-muted">${e.time}</td>
         <td>${e.camera}</td>
         <td>${e.event}</td>
         <td>${e.confidence}</td>
-        <td>${e.status === 'active'
-          ? '<span class="badge-active">Active</span>'
-          : `<span class="badge safe">${e.status}</span>`}</td>
-      </tr>`).join('');
+        <td>${statusHtml}</td>
+      </tr>`;
+    }).join('');
   }
 
-  // ── SSE connection ──
+  // ── SSE connection with auto-reconnect ───────────────────────────────
   function connect() {
     const es = new EventSource(`${API}/events/stream`);
     es.onmessage = (ev) => {
@@ -348,21 +482,22 @@
         const d = JSON.parse(ev.data);
         updateMetrics(d.metrics);
         updateEvents(d.events);
-      } catch(e) {}
+      } catch { }
     };
     es.onerror = () => {
       connected = false;
-      setStatus(false, 'API offline — start api.py server');
-      // Try to reconnect after 3s
+      setStatus('offline', 'API offline — run start.sh to launch servers');
       es.close();
-      setTimeout(connect, 3000);
+      setTimeout(connect, 4000);
     };
   }
 
-  // Init
+  // ── Init ─────────────────────────────────────────────────────────────
   loadStatus();
   connect();
-  // Reload model status every 30s
+  // Poll camera feed independently (catches frames while SSE is stable)
+  setInterval(refreshCameraFeed, 800);
+  // Reload model health every 30 s
   setInterval(loadStatus, 30000);
 </script>
 </body>
