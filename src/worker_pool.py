@@ -3,9 +3,9 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# 4 model threads (person, weapon, fire, road_anomaly) + 1 for scene + 1 spare
+# 4 model threads per frame * (up to 4 frames in parallel) = 16
 # Shared across all requests to avoid overhead
-_EXECUTOR = ThreadPoolExecutor(max_workers=8, thread_name_prefix="jerico-worker")
+_EXECUTOR = ThreadPoolExecutor(max_workers=16, thread_name_prefix="jerico-worker")
 
 def get_executor():
     return _EXECUTOR

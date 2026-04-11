@@ -12,9 +12,17 @@ import numpy as np
 # Keep imports working after moving dashboard.py to project root.
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 
-from detect import run_inference, CLASS_WEAPON, CLASS_PERSON, CLASS_FIRE
+from detect import (
+    run_inference,
+    CLASS_WEAPON,
+    CLASS_PERSON,
+    CLASS_FIRE,
+    CLASS_ROAD_ANOMALY,
+    CLASS_VEHICLE,
+)
 from detect_anomaly import load_anomaly_model, lookup_features, predict_anomaly
 from scene_understanding import SceneAnalyzer
+from hybrid_stack import HybridThreatStack
 from alert import (
     dispatch_authorities,
     generate_siren_audio,
@@ -27,6 +35,34 @@ import requests
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+def get_detection_label_and_color(class_id, conf, det=None, track_id=None, speed=None, suspicious=False):
+    event_name = "road anomaly"
+    if det is not None and len(det) > 6:
+        event_name = str(det[6])
+
+    if class_id == CLASS_FIRE:
+        return f"🔥 FIRE ({conf:.2f})", (0, 100, 255)
+    if class_id == CLASS_WEAPON:
+        if track_id is not None and speed is not None:
+            return f"🔫 WEAPON ({conf:.2f}) [T{track_id} S:{int(speed)}]", (0, 0, 255)
+        return f"🔫 WEAPON ({conf:.2f})", (0, 0, 255)
+    if class_id == CLASS_PERSON:
+        base_color = (0, 0, 255) if suspicious else (0, 255, 0)
+        if track_id is not None and speed is not None:
+            return f"🧍 PERSON ({conf:.2f}) [T{track_id} S:{int(speed)}]", base_color
+        return f"🧍 PERSON ({conf:.2f})", base_color
+    if class_id == CLASS_VEHICLE:
+        if track_id is not None and speed is not None:
+            return f"🚗 VEHICLE ({conf:.2f}) [T{track_id} S:{int(speed)}]", (255, 200, 0)
+        return f"🚗 VEHICLE ({conf:.2f})", (255, 200, 0)
+    if class_id == CLASS_ROAD_ANOMALY:
+        return f"⚠️ ROAD: {event_name} ({conf:.2f})", (180, 0, 255)
+
+    if track_id is not None and speed is not None:
+        return f"OBJECT ({conf:.2f}) [T{track_id} S:{int(speed)}]", (200, 200, 200)
+    return f"OBJECT ({conf:.2f})", (200, 200, 200)
 
 
 def apply_jet_black_theme():
@@ -239,6 +275,11 @@ def get_scene_analyzer():
         logger.error(f"Failed to initialize scene analyzer: {e}")
         return None
 
+
+@st.cache_resource
+def get_hybrid_stack(min_object_conf):
+    return HybridThreatStack(min_object_conf=min_object_conf)
+
 try:
     anomaly_model, device = get_anomaly_brain()
 except Exception as e:
@@ -328,6 +369,7 @@ else:
     )
 
 show_boxes = st.sidebar.toggle("Show Bounding Boxes", value=True)
+hybrid_stack = get_hybrid_stack(conf_threshold)
 
 st.sidebar.markdown("---")
 st.sidebar.header("Location")
@@ -435,15 +477,7 @@ if uploaded_file is not None:
                 has_fire = True
                 fire_conf_val = max(fire_conf_val, conf)
 
-            if is_fire:
-                color = (0, 100, 255)   # orange in BGR
-                label = f"🔥 FIRE ({conf:.2f})"
-            elif is_weapon:
-                color = (0, 0, 255)
-                label = f"🔫 GUN ({conf:.2f})"
-            else:
-                color = (0, 255, 0)
-                label = f"Person ({conf:.2f})"
+            label, color = get_detection_label_and_color(cls_id, conf, det=det)
 
             if show_boxes:
                 cv2.rectangle(frame, (int(x1), int(y1)), (int(x2), int(y2)), color, 2)
@@ -586,9 +620,6 @@ if uploaded_file is not None:
     prev_metric_val = None
     prev_dispatch = None
     
-    # Simple centroid motion tracker
-    prev_centroids = []
-    
     # Behavioral Smoothing Buffers
     scene_history = []  # Stores recent [category, prob] pairs
     MAX_HISTORY = 10    # About 5 seconds of scene context
@@ -607,11 +638,22 @@ if uploaded_file is not None:
             seg_idx = int((frame_idx / total_frames) * 32)
             if seg_idx >= 32: seg_idx = 31
             anomaly_score = float(segment_scores[seg_idx])
-            
-        violence_detected = anomaly_score >= anomaly_threshold
+
+        detections = run_inference(frame)
+        fusion = hybrid_stack.process(detections, anomaly_score, anomaly_threshold)
+        filtered_detections = fusion["filtered_detections"]
+        tracking = fusion["tracking"]
+        fused_threats = fusion["fused_threats"]
+
+        violence_detected = fusion["anomaly_triggered"]
         
         # --- 2. UNIVERSAL ZERO-SHOT SCENE UNDERSTANDING ---
-        if scene_analyzer is not None and frame_idx > 0 and frame_idx % 15 == 0:  # Sample twice a second, skip frame 0
+        if (
+            scene_analyzer is not None
+            and fusion["should_run_heavy_reasoning"]
+            and frame_idx > 0
+            and frame_idx % 15 == 0
+        ):  # Sample twice a second, skip frame 0
             try:
                 scene_type, scene_prob = scene_analyzer.analyze_frame(frame)
 
@@ -649,46 +691,12 @@ if uploaded_file is not None:
             violence_detected = True
 
         # --- 3. OBJECT DETECTION & MOTION TRACKING ---
-        detections = run_inference(frame)
-        current_centroids = []
-        speeds = []
         has_fire   = False
         fire_conf_val = 0.0
-        
-        # First pass: calculate speeds for all detections
-        for det in detections:
-            cls_id, conf, x1, y1, x2, y2 = det
-            if conf < conf_threshold:
-                speeds.append(0.0)
-                current_centroids.append((0,0))
-                continue
-                
-            cx = (x1 + x2) / 2.0
-            cy = (y1 + y2) / 2.0
-            current_centroids.append((cx, cy))
-            
-            min_dist = float('inf')
-            for (px, py) in prev_centroids:
-                dist = ((cx - px)**2 + (cy - py)**2)**0.5
-                if dist < min_dist:
-                    min_dist = dist
-                    
-            # If distance is too big, it's likely a new person entering frame, not a teleporting fast person
-            speed = min_dist if min_dist < 150 else 0.0
-            speeds.append(speed)
-            
-        prev_centroids = [c for c in current_centroids if c != (0,0)]
-        
-        # Calculate scene average speed to find outliers (aggressors)
-        valid_speeds = [s for s in speeds if s > 0]
-        avg_speed = sum(valid_speeds) / max(1, len(valid_speeds))
-        
+
         # Second pass: Draw bounding boxes with behavioral color logic
-        for i, det in enumerate(detections):
+        for i, det in enumerate(filtered_detections):
             cls_id, conf, x1, y1, x2, y2 = det
-            
-            if conf < conf_threshold:
-                continue
                 
             is_weapon = (cls_id == CLASS_WEAPON)
             is_fire   = (cls_id == CLASS_FIRE)
@@ -700,20 +708,19 @@ if uploaded_file is not None:
                 has_fire = True
                 fire_conf_val = max(fire_conf_val, conf)
             
-            # Behavioral logic
-            is_fast_actor = speeds[i] > max(avg_speed * 1.5, 8.0)
-            is_sprinting  = speeds[i] > max(avg_speed * 2.0, 15.0)
-            is_suspicious = is_weapon or is_fire or (violence_detected and is_fast_actor) or is_sprinting
+            speed = tracking[i]["speed"] if i < len(tracking) else 0.0
+            track_id = tracking[i]["track_id"] if i < len(tracking) else -1
+            is_fast_actor = speed > 12.0
+            is_suspicious = is_weapon or is_fire or (violence_detected and is_fast_actor)
             
-            if is_fire:
-                color = (0, 100, 255)   # orange in BGR
-                label = f"🔥 FIRE ({conf:.2f})"
-            elif is_weapon:
-                color = (0, 0, 255)
-                label = f"🔫 GUN ({conf:.2f}) [Spd: {int(speeds[i])}]"
-            else:
-                color = (0, 0, 255) if is_suspicious else (0, 255, 0)
-                label = f"🧍 Person ({conf:.2f}) [Spd: {int(speeds[i])}]"
+            label, color = get_detection_label_and_color(
+                cls_id,
+                conf,
+                det=det,
+                track_id=track_id,
+                speed=speed,
+                suspicious=is_suspicious,
+            )
             
             if show_boxes:
                 cv2.rectangle(frame, (int(x1), int(y1)), (int(x2), int(y2)), color, 2)
@@ -734,6 +741,8 @@ if uploaded_file is not None:
         if has_threat: thrt_str.append('🗡️ WEAPON (YOLO)')
         if has_fire:   thrt_str.append('🔥 FIRE (YOLO)')
         if violence_detected: thrt_str.append('🧨 VIOLENT ACTION')
+        for t in fused_threats:
+            thrt_str.append(f"⚠️ {t['type'].upper()} ({t['priority']})")
         
         new_status_text = f"**Identified Threats:** {', '.join(thrt_str) if thrt_str else 'None'}\n\n**Max Object Conf:** {threat_conf:.2f}"
         if new_status_text != prev_status_text:
@@ -757,6 +766,8 @@ if uploaded_file is not None:
                     threat_details = {
                         "weapons_detected": has_threat,
                         "fire_detected": has_fire,
+                        "fused_threats": [t["type"] for t in fused_threats],
+                        "pipeline_severity": fusion["severity"],
                         "violence_score": f"{anomaly_score*100:.1f}%",
                         "object_confidence": f"{threat_conf:.2f}",
                         "fire_confidence": f"{fire_conf_val:.2f}",

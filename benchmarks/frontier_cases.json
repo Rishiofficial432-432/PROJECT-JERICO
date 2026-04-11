@@ -1,0 +1,99 @@
+{
+  "suite": "Jerico Frontier Validation Suite",
+  "cases": [
+    {
+      "case_id": "T1_INTENT_IDENTITY",
+      "title": "Intent vs Identity Causal Reasoning",
+      "category": "reasoning",
+      "payload": {
+        "samples": [
+          {
+            "name": "A_technician",
+            "scene_text": "Restricted warehouse area. Person in high-visibility vest and hard hat carrying a long metallic maintenance ladder."
+          },
+          {
+            "name": "B_intruder",
+            "scene_text": "Restricted warehouse area. Person in balaclava and dark hoodie carrying a metallic crowbar near side entrance."
+          }
+        ]
+      },
+      "expected": {
+        "per_sample_severity": {
+          "A_technician": "LOW",
+          "B_intruder": "CRITICAL"
+        },
+        "min_accuracy": 1.0
+      }
+    },
+    {
+      "case_id": "T2_ZERO_SHOT_OPEN_VOCAB",
+      "title": "Zero-Shot Open Vocabulary",
+      "category": "open_vocabulary",
+      "payload": {
+        "concept_prompts": [
+          "unattended lithium-ion battery pack",
+          "person wielding machete"
+        ]
+      },
+      "expected": {
+        "min_recall": 0.75
+      }
+    },
+    {
+      "case_id": "T3_NMS_FREE_LATENCY",
+      "title": "NMS-Free Latency Stability",
+      "category": "latency",
+      "payload": {
+        "object_counts": [
+          10,
+          25,
+          50,
+          80
+        ],
+        "runs_per_count": 30
+      },
+      "expected": {
+        "target_mean_latency_ms": 1.5,
+        "max_variance_ratio": 0.03
+      }
+    },
+    {
+      "case_id": "T4_3D_PROXIMITY",
+      "title": "3D Proximity False Positive Resolution",
+      "category": "spatial",
+      "payload": {
+        "person_box": [
+          150,
+          120,
+          290,
+          430
+        ],
+        "weapon_box": [
+          260,
+          200,
+          320,
+          305
+        ],
+        "person_depth": 7.0,
+        "weapon_depth": 2.0,
+        "pixel_threshold": 120
+      },
+      "expected": {
+        "label": "NO_ARMED_LINK"
+      }
+    },
+    {
+      "case_id": "T5_TEMPORAL_IDENTITY",
+      "title": "Temporal Identity Occlusion Lock",
+      "category": "tracking",
+      "payload": {
+        "occlusion_seconds": 3.0,
+        "max_missed_frames": 12,
+        "fps": 30
+      },
+      "expected": {
+        "require_identity_lock": true
+      }
+    }
+  ]
+}

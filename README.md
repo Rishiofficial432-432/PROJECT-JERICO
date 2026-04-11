@@ -10,9 +10,10 @@
   <img src="https://img.shields.io/badge/Python-3.x-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python" />
   <img src="https://img.shields.io/badge/Streamlit-App-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white" alt="Streamlit" />
   <img src="https://img.shields.io/badge/PyTorch-Deep%20Learning-EE4C2C?style=for-the-badge&logo=pytorch&logoColor=white" alt="PyTorch" />
+  <img src="https://img.shields.io/badge/Florence--2-Vision%20Foundation-FF6F00?style=for-the-badge&logo=microsoft&logoColor=white" alt="Florence-2" />
   <img src="https://img.shields.io/badge/OpenCV-Computer%20Vision-5C3EE8?style=for-the-badge&logo=opencv&logoColor=white" alt="OpenCV" />
   <img src="https://img.shields.io/badge/Ultralytics-YOLOv8-111111?style=for-the-badge&logo=ultralytics&logoColor=white" alt="Ultralytics YOLOv8" />
-  <img src="https://img.shields.io/badge/Transformers-CLIP-FFB300?style=for-the-badge&logo=huggingface&logoColor=black" alt="Transformers CLIP" />
+  <img src="https://img.shields.io/badge/Transformers-HuggingFace-FFB300?style=for-the-badge&logo=huggingface&logoColor=black" alt="Transformers" />
   <img src="https://img.shields.io/badge/NumPy-Scientific%20Compute-013243?style=for-the-badge&logo=numpy&logoColor=white" alt="NumPy" />
   <img src="https://img.shields.io/badge/SciPy-Signal%20Processing-8CAAE6?style=for-the-badge&logo=scipy&logoColor=white" alt="SciPy" />
 </p>
@@ -84,13 +85,16 @@ From an operational perspective, Jerico helps teams shift from reactive CCTV rev
 
 ## Key Capabilities
 
-1. Image and video upload analysis
-2. Real-time-style frame threat inference in the dashboard
-3. Weapon/person detection via YOLO-based models
-4. Anomaly detection via MIL scoring over segment features
-5. CLIP-based scene interpretation
-6. Threat-state fusion logic and critical alert display
-7. Dispatch message generation with location context
+1. **Live NDJSON Streaming**: Real-time frame-by-frame inference results streamed to the dashboard for zero-latency monitoring.
+2. **Temporal Consistency (Streak Logic)**: Enforced 2-second persistence requirement for high-priority threats (Fire, Road Accidents) to suppress transient noise.
+3. **Accuracy Hardening**: IoU-based spatial filtering to prevent false positives (e.g., suppressing red vehicle reflections from triggering Fire alerts).
+4. **Unified Road Anomaly Detection**: Integrated heuristic collision detection and classification models labeled consistently as "road anomaly detected".
+5. **Best Ultimate Config**: Pre-optimized confidence thresholds (Fire: 0.82, Road: 0.40) for high-reliability production environments.
+6. Weapon/person detection via YOLO-based models.
+7. Anomaly detection via MIL scoring over segment features.
+8. **Florence-2 Visual Reasoning**: Leverages Microsoft's Florence-2-large foundation model to generate detailed natural language descriptions of scenes for advanced contextual threat analysis.
+9. Threat-state fusion logic and critical alert display.
+10. Dispatch message generation with location context.
 
 ## Detailed Tech Stack
 
@@ -109,8 +113,10 @@ From an operational perspective, Jerico helps teams shift from reactive CCTV rev
 5. Ultralytics YOLO
    - Object detection engine used to identify persons and weapon-like objects in frames.
 
-6. Transformers (CLIP)
-   - Scene-level semantic understanding by matching frame content against threat and normal-language prompts.
+### Vision Intelligence Layer
+
+1. **Florence-2-large**: A vision foundation model that provides deep contextual reasoning through natural language descriptions. This replaces standard CLIP-based zero-shot classification, allowing for more nuanced situational awareness.
+2. **YOLOv8**: Real-time object detection for high-priority threats (weapons, people, fire, vehicles).
 
 7. NumPy
    - Numerical backbone for feature manipulation, array transforms, and preprocessing.

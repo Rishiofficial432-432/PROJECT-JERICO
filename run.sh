@@ -1,15 +1,27 @@
 #!/bin/bash
 set -e
 
-echo "Starting CCTV Security System..."
-
-# Single source of truth: project-local .venv only.
-if [ ! -x ".venv/bin/python" ]; then
-	echo "Error: .venv not found. Create it with: python3.12 -m venv .venv"
-	exit 1
+# Load local environment variables (e.g., GEMINI_API_KEY) if present.
+if [ -f ".env" ]; then
+    set -a
+    . ".env"
+    set +a
 fi
 
-PYTHON_BIN=".venv/bin/python"
+echo "Starting CCTV Security System..."
+
+# Priority: 1. System/Global python3 (often modern), 2. Local .venv
+# Check if global python3 supports Torch 2.4+ (needed for Florence-2)
+TORCH_OK=$(python3 -c "import torch; from packaging import version; print(version.parse(torch.__version__) >= version.parse('2.4'))" 2>/dev/null || echo "False")
+
+if [ "$TORCH_OK" = "True" ]; then
+    PYTHON_BIN="python3"
+elif [ -x ".venv/bin/python" ]; then
+    PYTHON_BIN=".venv/bin/python"
+else
+    echo "Error: No suitable Python environment found. Core models require Torch >= 2.4."
+    exit 1
+fi
 
 echo "Using Python: $PYTHON_BIN"
 

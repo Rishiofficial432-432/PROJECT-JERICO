@@ -8,6 +8,13 @@ set -e
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 PYTHON="$ROOT/.venv/bin/python"
 
+# Load local environment variables (e.g., GEMINI_API_KEY) if present.
+if [ -f "$ROOT/.env" ]; then
+    set -a
+    . "$ROOT/.env"
+    set +a
+fi
+
 # Verify venv exists
 if [ ! -x "$PYTHON" ]; then
     echo "❌  .venv not found. Run first:"
@@ -15,65 +22,72 @@ if [ ! -x "$PYTHON" ]; then
     exit 1
 fi
 
-API_PORT=8000
-FRONTEND_PORT=3000
+# ── Function to find available port ────────────────────────────
+find_free_port() {
+    local port=$1
+    while true; do
+        if ! lsof -i :$port >/dev/null 2>&1; then
+            echo "$port"
+            return 0
+        fi
+        port=$((port + 1))
+        if [ "$port" -gt 8050 ]; then
+            echo "8000" # fallback
+            return 1
+        fi
+    done
+}
+
+API_PORT=$(find_free_port 8000)
 
 echo ""
 echo "╔══════════════════════════════════════════╗"
-echo "║       PROJECT JERICO  —  LAUNCHER        ║"
+echo "║   PROJECT JERICO — MULTI-INSTANCE LCH    ║"
 echo "╚══════════════════════════════════════════╝"
+echo "📡  Selecting Port: $API_PORT"
 echo ""
 
-# ── 1. FastAPI backend ────────────────────────────────────────
-echo "🚀  Starting FastAPI backend  →  http://localhost:$API_PORT"
+# ── 1. Unified Jerico Server (FastAPI + HTML) ─────────────────
+echo "🚀  Starting Unified Jerico Server  →  http://localhost:$API_PORT"
 "$PYTHON" -m uvicorn frontend.api:app \
     --host 0.0.0.0 \
     --port "$API_PORT" \
     --reload \
     --app-dir "$ROOT" \
-    2>&1 | sed 's/^/[API] /' &
-API_PID=$!
-
-# ── 2. Static file server for HTML frontend ───────────────────
-echo "🌐  Starting HTML frontend    →  http://localhost:$FRONTEND_PORT"
-"$PYTHON" -m http.server "$FRONTEND_PORT" \
-    --directory "$ROOT/frontend" \
-    2>&1 | sed 's/^/[WEB] /' &
-WEB_PID=$!
+    2>&1 | sed 's/^/[SERVER] /' &
+SERVER_PID=$!
 
 echo ""
 echo "────────────────────────────────────────────"
-echo "  API  Backend   →  http://localhost:$API_PORT"
-echo "  HTML Frontend  →  http://localhost:$FRONTEND_PORT/index.html"
-echo "  Upload Page    →  http://localhost:$FRONTEND_PORT/upload.html"
-echo "  API Docs       →  http://localhost:$API_PORT/docs"
+echo "  Main Dashboard  →  http://localhost:$API_PORT/index.html"
+echo "  Upload Page     →  http://localhost:$API_PORT/upload.html"
+echo "  API Docs        →  http://localhost:$API_PORT/docs"
 echo "────────────────────────────────────────────"
-echo "  Press  Ctrl+C  to stop everything."
+echo "  Press  Ctrl+C  to stop."
 echo ""
 
 # ── Open browser (macOS) ──────────────────────────────────────
-sleep 2
-open "http://localhost:$FRONTEND_PORT/index.html" 2>/dev/null || true
+sleep 3
+open "http://localhost:$API_PORT/index.html" 2>/dev/null || true
 
 # ── Graceful shutdown ─────────────────────────────────────────
 cleanup() {
     echo ""
-    echo "🛑  Shutting down all servers..."
-    kill "$API_PID" "$WEB_PID" 2>/dev/null
+    echo "🛑  Shutting down server..."
+    kill "$SERVER_PID" 2>/dev/null
     
     # Wait for up to 3 seconds for graceful shutdown
     for i in {1..3}; do
-        if ! kill -0 "$API_PID" 2>/dev/null && ! kill -0 "$WEB_PID" 2>/dev/null; then
-            echo "✅  All servers stopped gracefully."
+        if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+            echo "✅  Server stopped gracefully."
             exit 0
         fi
         sleep 1
     done
 
     # Force kill if still running
-    echo "⚠️  Force killing stuck processes..."
-    kill -9 "$API_PID" "$WEB_PID" 2>/dev/null
-    echo "✅  All servers stopped."
+    kill -9 "$SERVER_PID" 2>/dev/null
+    echo "✅  Server stopped."
     exit 0
 }
 

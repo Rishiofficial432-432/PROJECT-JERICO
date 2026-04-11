@@ -26,20 +26,32 @@ import numpy as np
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse
+from pydantic import BaseModel
 
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, RedirectResponse
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 VIDEO_EXTS = {".mp4", ".avi", ".mov", ".mkv", ".webm"}
 
 from detect import (
     run_inference_async, 
-    CLASS_WEAPON, CLASS_PERSON, CLASS_FIRE, CLASS_ROAD_ANOMALY,
-    person_model, weapon_model, fire_model, road_model
+    CLASS_WEAPON, CLASS_PERSON, CLASS_FIRE, CLASS_ROAD_ANOMALY, CLASS_VEHICLE,
+    person_model, weapon_model, fire_model, road_model, vehicle_model
 )
 from threat_logic import (
     WEAPON_CONF_THRESHOLD, FIRE_CONF_THRESHOLD, ROAD_ANOMALY_CONF_THRESHOLD,
     evaluate_threat, refine_detections
 )
 from worker_pool import get_executor
+from video_utils import apply_temporal_anchor, format_mmss_ms
+
+try:
+    import importlib
+    dotenv_mod = importlib.import_module("dotenv")
+    dotenv_mod.load_dotenv()
+except Exception:
+    # dotenv is optional at runtime; shell exports still work.
+    pass
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -79,6 +91,7 @@ _state = {
     "road_conf": 0.0,
     "violence_score": 0.0,
     "scene_label": "No footage analysed",
+    "scene_description": "Waiting for footage...",
     "scene_conf": 0.0,
     "threat_active": False,
     "threat_type": [],
@@ -90,6 +103,7 @@ _state = {
 
 _events: deque = deque(maxlen=100)
 _events_lock = threading.Lock()
+_live_lock = asyncio.Lock()
 
 def _log_event(camera: str, event_type: str, confidence: Optional[float], status: str):
     with _events_lock:
@@ -101,11 +115,40 @@ def _log_event(camera: str, event_type: str, confidence: Optional[float], status
             "status": status,
         })
 
+
+class LiveFramePayload(BaseModel):
+    frame_b64: str
+    camera_name: str = "Webcam-01"
+    person_conf: float = 0.45
+    weapon_conf: float = 0.55
+    fire_conf: float = 0.82
+    road_conf: float = 0.40
+    vehicle_conf: float = 0.35
+
+
+def _decode_data_url_to_frame(data_url: str):
+    if not data_url:
+        return None
+    try:
+        if "," in data_url:
+            data_url = data_url.split(",", 1)[1]
+        raw = base64.b64decode(data_url)
+        arr = np.frombuffer(raw, dtype=np.uint8)
+        frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+        return frame
+    except Exception as e:
+        logger.error(f"Failed decoding live frame: {e}")
+        return None
+
 # ─────────────────────────────────────────────
 #  FastAPI app
 # ─────────────────────────────────────────────
 
 app = FastAPI(title="Jerico API", version="2.0.0")
+
+def read_index():
+    return RedirectResponse(url="/index.html")
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -117,13 +160,68 @@ app.add_middleware(
 @app.get("/api/status")
 def get_status():
     yolo_ready = all([person_model, weapon_model])
+    model_details = {
+        "person_detector": {
+            "label": "YOLOv8 Person Detector",
+            "family": "YOLOv8",
+            "weights": "yolov8n.pt",
+            "ready": bool(person_model),
+        },
+        "weapon_detector": {
+            "label": "Weapon Detector",
+            "family": "YOLOv8",
+            "weights": "models/gun_bestweight.pt (fallback: models/best_model.pt)",
+            "ready": bool(weapon_model),
+        },
+        "fire_detector": {
+            "label": "Fire Detector",
+            "family": "YOLOv8",
+            "weights": "models/fire_detection.pt",
+            "ready": bool(fire_model),
+        },
+        "road_detector": {
+            "label": "Road Anomaly Detector",
+            "family": "YOLOv8",
+            "weights": "models/road_anomaly.pt",
+            "ready": bool(road_model),
+        },
+        "vehicle_detector": {
+            "label": "Vehicle Detector",
+            "family": "YOLOv8",
+            "weights": "models/vehical_detection.pt",
+            "ready": bool(vehicle_model),
+        },
+        "anomaly_model": {
+            "label": "Temporal Social Anomaly",
+            "family": "MIL",
+            "weights": "models/best_anomaly_model.pth",
+            "ready": bool(_anomaly_ready),
+        },
+        "scene_reasoner": {
+            "label": "Scene Reasoner",
+            "family": "Gemini 3.1 Pro (fallback local)",
+            "weights": getattr(_scene_analyzer, "_model_name", "gemini-3.1-pro-preview"),
+            "ready": bool(_scene_ready),
+        },
+    }
     return {
         "yolo":    {"ready": yolo_ready, "error": None},
         "anomaly": {"ready": _anomaly_ready, "error": None},
         "scene":   {"ready": _scene_ready, "error": None},
         "fire":    {"ready": bool(fire_model), "error": None},
         "road":    {"ready": bool(road_model), "error": None},
-        "models_active": sum([yolo_ready, _anomaly_ready, _scene_ready, bool(fire_model), bool(road_model)]),
+        "vehicle": {"ready": bool(vehicle_model), "error": None},
+        "models_active": sum(1 for m in model_details.values() if m["ready"]),
+        "models_total": len(model_details),
+        "architecture_mode": "Reasoning Firewall (YOLO + Temporal Anchor + Gemini)",
+        "threat_logic": {
+            "weapon_conf_threshold": WEAPON_CONF_THRESHOLD,
+            "fire_conf_threshold": FIRE_CONF_THRESHOLD,
+            "road_conf_threshold": ROAD_ANOMALY_CONF_THRESHOLD,
+            "armed_person_pixel_distance": 120,
+            "tracker": "CentroidTracker",
+        },
+        "models": model_details,
     }
 
 @app.get("/api/metrics")
@@ -149,76 +247,199 @@ async def sse_stream():
             await asyncio.sleep(1)
     return StreamingResponse(_gen(), media_type="text/event-stream")
 
+
+@app.get("/api/last_frame")
+def get_last_frame():
+    return {
+        "has_frame": bool(_state.get("last_frame_b64")),
+        "frame_b64": _state.get("last_frame_b64", ""),
+        "camera": _state.get("active_camera", "—"),
+        "filename": _state.get("last_filename", "live"),
+        "threat_active": _state.get("threat_active", False),
+    }
+
+
+@app.post("/api/live/frame")
+async def ingest_live_frame(payload: LiveFramePayload):
+    if _live_lock.locked():
+        return {"accepted": False, "busy": True}
+
+    async with _live_lock:
+        frame = _decode_data_url_to_frame(payload.frame_b64)
+        if frame is None:
+            return JSONResponse(status_code=400, content={"error": "Invalid live frame payload"})
+
+        th = {
+            "person": payload.person_conf,
+            "weapon": payload.weapon_conf,
+            "fire": payload.fire_conf,
+            "road": payload.road_conf,
+            "vehicle": payload.vehicle_conf,
+        }
+
+        dets = await run_inference_async(
+            frame,
+            person_conf=th["person"],
+            weapon_conf=th["weapon"],
+            fire_conf=th["fire"],
+            road_conf=th["road"],
+            vehical_conf=th["vehicle"],
+            executor=get_executor(),
+        )
+        refined = refine_detections(dets)
+        res = _analyse_detections(refined, th, frame)
+
+        scene_l, scene_c = ("—", 0.0)
+        if _scene_analyzer:
+            scene_l, scene_c = await asyncio.to_thread(_scene_analyzer.analyze_frame, frame)
+
+        frame_b64 = _encode_frame_b64(frame, res["boxes"])
+        _state.update({
+            "active_camera": payload.camera_name,
+            "last_filename": "live_webcam",
+        })
+        _update_state_post_process(res, scene_l, scene_c, frame_b64, "live_webcam", 0.0)
+
+        if res["has_threat"] or res["has_fire"]:
+            _log_event(payload.camera_name, " + ".join(res["threat_types"] or ["threat"]),
+                       max(res.get("weapon_conf", 0), res.get("fire_conf", 0), res.get("road_conf", 0)), "active")
+
+        return {
+            "accepted": True,
+            "busy": False,
+            "threat_active": _state.get("threat_active", False),
+            "threat_types": _state.get("threat_type", []),
+        }
+
 # ─────────────────────────────────────────────
+# ─────────────────────────────────────────────
+#  Detection & Encoding Helpers
+# ─────────────────────────────────────────────
+
+def _encode_frame_b64(frame, boxes=None):
+    """Encodes a frame to base64 for the frontend, optionally drawing boxes."""
+    try:
+        if boxes is not None:
+            temp_frame = frame.copy()
+            for b in boxes:
+                if len(b) >= 4:
+                    x1, y1, x2, y2 = map(int, b[:4])
+                    cv2.rectangle(temp_frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
+            _, buffer = cv2.imencode('.jpg', temp_frame)
+        else:
+            _, buffer = cv2.imencode('.jpg', frame)
+        return "data:image/jpeg;base64," + base64.b64encode(buffer).decode()
+    except Exception as e:
+        logger.error(f"Encoding error: {e}")
+        return ""
+
+def _analyse_detections(detections, th, frame):
+    """
+    Bridge between raw detections and Situation Summary.
+    Applies thresholds and identifies active threat flags.
+    """
+    # 1. Get situation object from threat_logic (which uses refinement)
+    threats = evaluate_threat(detections)
+    
+    # 2. Extract metrics for dashboard
+    w_conf = max([t["confidence"] for t in threats if "weapon" in t["type"].lower()] or [0.0])
+    f_conf = max([t["confidence"] for t in threats if t["type"] == "fire"] or [0.0])
+    r_conf = max([t["confidence"] for t in threats if t["type"] in ["road anomaly detected", "road_anomaly"]] or [0.0])
+    
+    # Return unified dict for state updates
+    return {
+        "has_threat": len(threats) > 0,
+        "has_fire": any(t["type"] == "fire" for t in threats),
+        "threat_types": list(set(t["type"] for t in threats)),
+        "weapon_conf": w_conf,
+        "fire_conf": f_conf,
+        "road_conf": r_conf,
+        "boxes": [d[2:6] for d in detections], # x1,y1,x2,y2
+        "vehicle_count": sum(1 for d in detections if d[0] == 4) # CLASS_VEHICLE is 4
+    }
+
 #  Queue-Buffered Video Processing
 # ─────────────────────────────────────────────
 
-async def _frame_producer(cap, interval, queue, num_workers):
+async def _frame_producer(cap, interval, fps_val, queue, num_workers):
     frame_idx = 0
     while cap.isOpened():
         ret, frame = cap.read()
         if not ret: break
         if frame_idx % interval == 0:
-            await queue.put((frame_idx, frame.copy()))
+            anchored = apply_temporal_anchor(frame.copy(), frame_idx / max(fps_val, 1.0))
+            await queue.put((frame_idx, anchored))
         frame_idx += 1
     for _ in range(num_workers):
         await queue.put(None) # Signal completion to all workers
 
-async def _inference_worker(queue, results_list, th, executor):
+async def _inference_worker(queue, results_list, th, executor, yield_queue=None, total_frames=1):
     while True:
         item = await queue.get()
         if item is None:
             queue.task_done()
+            if yield_queue:
+                await yield_queue.put(None)
             break
         idx, frame = item
-        # Parallel model inference
-        dets = await run_inference_async(
-            frame, 
-            person_conf=th["person"], 
-            weapon_conf=0.1, # Allow refinement logic to handle the threshold
-            fire_conf=th["fire"], 
-            road_conf=th["road"], 
-            executor=executor
-        )
-        
-        # Apply Accuracy Hardening (Spatial Validation)
-        refined_dets = refine_detections(dets)
-        r = _analyse_detections(refined_dets, th, frame)
-        results_list.append((idx, frame, r))
-        
-        # Real-time Flagging: Update global state immediately if threat found or every 5th analysed frame
-        is_threat = r["has_threat"] or r["has_fire"]
-        if is_threat or idx % 5 == 0:
-            frame_b64 = _encode_frame_b64(frame, r["boxes"])
-            _state.update({
-                "last_scan_ts": time.time(),
-                "weapon_conf": max(_state["weapon_conf"], r.get("weapon_conf", 0)),
-                "fire_conf": max(_state["fire_conf"], r.get("fire_conf", 0)),
-                "road_conf": max(_state["road_conf"], r.get("road_conf", 0)),
-                "threat_active": _state["threat_active"] or is_threat,
-                "threat_type": list(set(_state["threat_type"]) | set(r["threat_types"])),
-                "last_frame_b64": frame_b64,
-            })
-            if is_threat:
-                _log_event(_state["active_camera"], " + ".join(r["threat_types"]), 
-                          max(r["weapon_conf"], r["fire_conf"], r["road_conf"]), "active")
-        
-        queue.task_done()
+        try:
+            # Parallel model inference
+            dets = await run_inference_async(
+                frame,
+                person_conf=th.get("person", 0.5),
+                weapon_conf=0.1, # Allow refinement logic to handle the threshold
+                fire_conf=th.get("fire", 0.5),
+                road_conf=th.get("road", 0.5),
+                vehical_conf=th.get("vehicle", 0.5),
+                executor=executor
+            )
 
+            # Apply Accuracy Hardening (Spatial Validation)
+            refined_dets = refine_detections(dets)
+            r = _analyse_detections(refined_dets, th, frame)
+            results_list.append((idx, frame, r))
+
+            if yield_queue:
+                b64 = _encode_frame_b64(frame, r["boxes"])
+                pct = min(99, int((idx / total_frames) * 100)) if total_frames > 0 else 0
+                await yield_queue.put({"progress": pct, "frame_b64": b64})
+
+            # Real-time Flagging: Update global state immediately if threat found or every 5th analysed frame
+            is_threat = r["has_threat"] or r["has_fire"]
+            if is_threat or idx % 5 == 0:
+                frame_b64 = _encode_frame_b64(frame, r["boxes"])
+                _state.update({
+                    "last_scan_ts": time.time(),
+                    "weapon_conf": max(_state["weapon_conf"], r.get("weapon_conf", 0)),
+                    "fire_conf": max(_state["fire_conf"], r.get("fire_conf", 0)),
+                    "road_conf": max(_state["road_conf"], r.get("road_conf", 0)),
+                    "threat_active": _state["threat_active"] or is_threat,
+                    "threat_type": list(set(_state["threat_type"]) | set(r["threat_types"])),
+                    "last_frame_b64": frame_b64,
+                })
+                if is_threat:
+                    _log_event(_state["active_camera"], " + ".join(r["threat_types"]),
+                              max(r["weapon_conf"], r["fire_conf"], r["road_conf"]), "active")
+        except Exception as e:
+            logger.error(f"Worker frame processing failed at idx={idx}: {e}")
+            if yield_queue:
+                pct = min(99, int((idx / total_frames) * 100)) if total_frames > 0 else 0
+                await yield_queue.put({"progress": pct})
+        finally:
+            queue.task_done()
 @app.post("/api/upload")
 async def upload_footage(
     file: UploadFile = File(...),
     camera_name: str = "CCTV-01",
-    person_conf: float = 0.60,
-    weapon_conf: float = 0.85,
-    fire_conf:   float = 0.70,
-    road_conf:   float = 0.60,
-    anomaly_alert: float = 70.0,
-    # Handle both naming conventions from frontend
+    person_conf: float = 0.45,
+    weapon_conf: float = 0.55,
+    fire_conf:   float = 0.82,
+    road_conf:   float = 0.40,
+    anomaly_alert: float = 65.0,
+    vehicle_conf: float = 0.35,
     person_conf_threshold: float = None,
     weapon_conf_threshold: float = None,
 ):
-    # Use threshold variants if provided
     if person_conf_threshold is not None:
         person_conf = person_conf_threshold
     if weapon_conf_threshold is not None:
@@ -239,133 +460,203 @@ async def upload_footage(
         "last_filename": file.filename
     })
 
-    th = {"person": person_conf, "weapon": weapon_conf, "fire": fire_conf, "road": road_conf}
+    th = {"person": person_conf, "weapon": weapon_conf, "fire": fire_conf, "road": road_conf, "vehicle": vehicle_conf}
     executor = get_executor()
 
-    try:
-        if ext in IMAGE_EXTS:
+    if ext in IMAGE_EXTS:
+        try:
             frame = cv2.imread(tmp_path)
+            if frame is None:
+                return JSONResponse(status_code=400, content={"error": "Could not read image file."})
+            frame = apply_temporal_anchor(frame, 0.0)
+            
             dets = await run_inference_async(
                 frame, 
                 person_conf=th["person"], 
                 weapon_conf=th["weapon"], 
                 fire_conf=th["fire"], 
                 road_conf=th["road"], 
+                vehical_conf=th["vehicle"],
                 executor=executor
             )
             res = _analyse_detections(dets, th, frame)
             
-            # Scene
             scene_l, scene_c = ("—", 0.0)
             if _scene_analyzer:
                 scene_l, scene_c = await asyncio.to_thread(_scene_analyzer.analyze_frame, frame)
 
             frame_b64 = _encode_frame_b64(frame, res["boxes"])
             _update_state_post_process(res, scene_l, scene_c, frame_b64, file.filename)
-            total_dets = len(res.get("boxes", []))
             return {
                 **res,
                 "media_type": "image",
                 "frame_b64": frame_b64,
                 "scene_label": scene_l,
+                "scene_description": scene_l,
                 "camera": camera_name,
-                "total_detections": total_dets,
+                "total_detections": len(res.get("boxes", [])),
             }
+        finally:
+            try:
+                os.unlink(tmp_path)
+            except: pass
+    else:
+        # Video Processing setup
+        cap = cv2.VideoCapture(tmp_path)
+        if not cap.isOpened():
+            try:
+                os.unlink(tmp_path)
+            except: pass
+            return JSONResponse(status_code=400, content={"error": "Could not open video file."})
+            
+        total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        fps_val = cap.get(cv2.CAP_PROP_FPS) or 30.0
+        interval = max(1, int(fps_val * 0.3)) 
         
-        else:
-            cap = cv2.VideoCapture(tmp_path)
-            total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-            fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
-            
-            # Continuous analysis: Sample every 0.3s or at least 1 frame
-            interval = max(1, int(fps * 0.3)) 
-            
-            queue = asyncio.Queue(maxsize=20)
-            results = []
-            num_workers = 3
-            
-            # Start producer and workers
-            producer = asyncio.create_task(_frame_producer(cap, interval, queue, num_workers))
-            workers = [asyncio.create_task(_inference_worker(queue, results, th, executor)) for _ in range(num_workers)]
-            
-            await asyncio.gather(producer, *workers)
-            cap.release()
+        async def _vid_generator():
+            try:
+                queue = asyncio.Queue(maxsize=20)
+                yield_queue = asyncio.Queue(maxsize=32)
+                results = []
+                num_workers = 3
+                
+                producer = asyncio.create_task(_frame_producer(cap, interval, fps_val, queue, num_workers))
+                workers = [asyncio.create_task(_inference_worker(queue, results, th, executor, yield_queue, total)) for _ in range(num_workers)]
+                
+                active_workers = num_workers
+                while active_workers > 0:
+                    try:
+                        item = await asyncio.wait_for(yield_queue.get(), timeout=20)
+                    except asyncio.TimeoutError:
+                        # Avoid indefinite hang if worker exits unexpectedly.
+                        if all(w.done() for w in workers):
+                            break
+                        continue
+                    if item is None:
+                        active_workers -= 1
+                    else:
+                        yield json.dumps(item) + "\n"
 
-            if not results: return {"error": "No frames processed"}
-            results.sort(key=lambda x: x[0]) # Chronological order
+                # Surface worker exceptions if any (for logs) without killing response.
+                await producer
+                await asyncio.gather(*workers, return_exceptions=True)
+                
+                if cap and cap.isOpened():
+                    cap.release()
 
-            # ── Accuracy Hardening: Temporal Persistence Filter ─────────────
-            def check_persistence(type_key, min_frames=2, instant_threshold=0.98):
-                type_results = [r[2] for r in results]
-                confirmed_conf = 0.0
-                active_types = set()
-                thresh_map = {"weapon_conf": WEAPON_CONF_THRESHOLD, "fire_conf": FIRE_CONF_THRESHOLD, "road_conf": ROAD_ANOMALY_CONF_THRESHOLD}
-                current_thresh = thresh_map.get(type_key, 0.5)
+                if not results:
+                    yield json.dumps({"error": "No frames processed"}) + "\n"
+                    return
 
-                for i in range(len(type_results)):
-                    r_frame = type_results[i]
-                    conf = r_frame.get(type_key, 0)
-                    if conf >= instant_threshold:
-                        confirmed_conf = max(confirmed_conf, conf)
-                        active_types.add(type_key.replace("_conf", "").capitalize())
-                    elif conf >= current_thresh:
-                        # Window: 2 frames before, 2 frames after
-                        window = type_results[max(0, i-2):i+3]
-                        count = sum(1 for wr in window if wr.get(type_key, 0) >= current_thresh * 0.85)
-                        if count >= min_frames:
+                results.sort(key=lambda x: x[0])
+
+                def check_persistence(type_key, min_frames=2, instant_threshold=0.98):
+                    type_results = [r[2] for r in results]
+                    confirmed_conf = 0.0
+                    active_types = set()
+                    thresh_map = {"weapon_conf": WEAPON_CONF_THRESHOLD, "fire_conf": FIRE_CONF_THRESHOLD, "road_conf": ROAD_ANOMALY_CONF_THRESHOLD}
+                    current_thresh = thresh_map.get(type_key, 0.5)
+
+                    for i in range(len(type_results)):
+                        r_frame = type_results[i]
+                        conf = r_frame.get(type_key, 0)
+                        if conf >= instant_threshold:
                             confirmed_conf = max(confirmed_conf, conf)
-                            active_types.add(type_key.replace("_conf", "").capitalize())
-                return confirmed_conf, active_types
+                            for ty in r_frame.get("threat_types", []):
+                                if type_key.replace("_conf", "").lower() in ty.lower():
+                                    active_types.add(ty)
+                        elif conf >= current_thresh:
+                            count = sum(1 for wr in type_results[max(0, i-2):i+3] if wr.get(type_key, 0) >= current_thresh * 0.85)
+                            if count >= min_frames:
+                                confirmed_conf = max(confirmed_conf, conf)
+                                for ty in r_frame.get("threat_types", []):
+                                    if type_key.replace("_conf", "").lower() in ty.lower():
+                                        active_types.add(ty)
+                    return confirmed_conf, active_types
 
-            max_w, types_w = check_persistence("weapon_conf")
-            max_f, types_f = check_persistence("fire_conf")
-            max_r, types_r = check_persistence("road_conf")
-            threat_types = types_w | types_f | types_r
-            
-            # Anomaly correlation
-            anom_score = 0.0
-            if _anomaly_ready:
-                f_path = lookup_features(file.filename)
-                if f_path:
-                    scores = predict_anomaly(f_path, _anomaly_model, _anomaly_device)
-                    anom_score = float(np.max(scores)) * 100
+                max_w, types_w = check_persistence("weapon_conf", min_frames=1)
+                max_f, types_f = check_persistence("fire_conf", min_frames=2)
+                max_r, types_r = check_persistence("road_conf", min_frames=2)
+                threat_types = types_w | types_f | types_r
+                
+                narrative = []
+                for idx, frame, r in results:
+                    ts = round(idx / fps_val, 1)
+                    if r["threat_types"]:
+                        narrative.append(f"{ts}s: {','.join(r['threat_types'])}")
+                
+                final_summary = " | ".join(narrative[:5]) + ("..." if len(narrative) > 5 else "")
+                if not final_summary: final_summary = "Normal activity observed."
 
-            # Final Logic: Correlate with Anomaly Score
-            has_threat = max_w > 0 or max_r > 0
-            has_fire = max_f > 0
-            if anom_score < 30.0 and max(max_w, max_f, max_r) < 0.95:
-                # If scene is "too normal", ignore marginal detections
-                has_threat = has_fire = False
-                threat_types = []
+                # Sorting by (weapon, fire, road, frame_index) ensuring that the latest high-confidence frame is picked
+                worst = sorted(results, key=lambda x: (x[2].get("weapon_conf",0), x[2].get("fire_conf",0), x[2].get("road_conf",0), x[0]), reverse=True)
+                frame_b64 = _encode_frame_b64(worst[0][1], worst[0][2]["boxes"]) if worst else ""
 
-            # Visual fallback
-            worst = sorted(results, key=lambda x: (x[2]["weapon_conf"], x[2]["fire_conf"], x[2]["road_conf"]), reverse=True)[0]
-            frame_b64 = _encode_frame_b64(worst[1], worst[2]["boxes"])
+                max_v = max([r[2].get("vehicle_count", 0) for r in results]) if results else 0
 
-            _update_state_post_process(
-                {"weapon_conf": max_w, "fire_conf": max_f, "road_conf": max_r, "has_threat": has_threat, "has_fire": has_fire, "threat_types": list(threat_types)},
-                "—", 0.0, frame_b64, file.filename, anom_score
-            )
+                has_threat = len(threat_types) > 0
+                has_fire = max_f > 0
 
-            duration = (int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) / (cap.get(cv2.CAP_PROP_FPS) or 30.0))
-            return {
-                "media_type": "video",
-                "frame_b64": frame_b64,
-                "weapon_conf": max_w,
-                "fire_conf": max_f,
-                "road_conf": max_r,
-                "threat_types": list(threat_types),
-                "anomaly_score": anom_score,
-                "camera": camera_name,
-                "has_threat": has_threat,
-                "has_fire": has_fire,
-                "total_frames": int(cap.get(cv2.CAP_PROP_FRAME_COUNT)),
-                "duration_seconds": round(duration, 1),
-                "total_detections": sum(len(r[2].get("boxes", [])) for r in results),
-            }
+                reasoning_firewall = None
+                if _scene_analyzer and (has_threat or has_fire) and worst:
+                    worst_idx = worst[0][0]
+                    center_ts = worst_idx / max(fps_val, 1.0)
+                    window = [
+                        fr for idx, fr, _ in results
+                        if abs((idx / max(fps_val, 1.0)) - center_ts) <= 1.5
+                    ][:12]
+                    try:
+                        reasoning_firewall = await asyncio.to_thread(
+                            _scene_analyzer.validate_threat_reasoning,
+                            window,
+                            format_mmss_ms(center_ts),
+                        )
+                        if reasoning_firewall.get("is_accident") and not reasoning_firewall.get("is_fire"):
+                            threat_types.discard("fire")
+                            threat_types.add("road_accident")
+                            has_fire = False
+                    except Exception as e:
+                        logger.warning(f"Reasoning firewall failed: {e}")
 
-    finally:
-        os.unlink(tmp_path)
+                summary_text = final_summary
+                if reasoning_firewall and reasoning_firewall.get("reasoning"):
+                    summary_text = reasoning_firewall.get("reasoning")
+
+                _update_state_post_process(
+                    {"weapon_conf": max_w, "fire_conf": max_f, "road_conf": max_r, "has_threat": has_threat, "has_fire": has_fire, "threat_types": list(threat_types), "vehicle_count": max_v},
+                    summary_text, 1.0, frame_b64, file.filename, 0.0
+                )
+
+                duration = (total / fps_val) if fps_val > 0 else 0
+                
+                final_res = {
+                    "media_type": "video",
+                    "frame_b64": frame_b64,
+                    "weapon_conf": max_w,
+                    "fire_conf": max_f,
+                    "road_conf": max_r,
+                    "threat_types": list(threat_types),
+                    "summary": final_summary,
+                    "camera": camera_name,
+                    "has_threat": has_threat,
+                    "has_fire": has_fire,
+                    "reasoning_firewall": reasoning_firewall or {},
+                    "corrected_timestamp": (reasoning_firewall or {}).get("corrected_timestamp", ""),
+                    "total_frames": total,
+                    "duration_seconds": round(duration, 1),
+                    "total_detections": sum(len(r[2].get("boxes", [])) for r in results),
+                    "scene_label": final_summary,
+                    "scene_description": final_summary,
+                }
+                yield json.dumps({"result": final_res}) + "\n"
+            finally:
+                if cap and cap.isOpened(): cap.release()
+                try:
+                    os.unlink(tmp_path)
+                except:
+                    pass
+        
+        return StreamingResponse(_vid_generator(), media_type="application/x-ndjson")
 
 def _update_state_post_process(res, scene_l, scene_c, b64, fname, anom=0.0):
     _state.update({
@@ -373,91 +664,26 @@ def _update_state_post_process(res, scene_l, scene_c, b64, fname, anom=0.0):
         "weapon_conf": res.get("weapon_conf", 0),
         "fire_conf": res.get("fire_conf", 0),
         "road_conf": res.get("road_conf", 0),
+        "vehicle_count": res.get("vehicle_count", 0),
         "scene_label": scene_l,
+        "scene_description": scene_l,
         "scene_conf": scene_c,
         "anomaly_score": anom,
         "threat_active": res["has_threat"] or res["has_fire"],
-        "threat_type": res["threat_types"],
+        "threat_type": res.get("threat_types", []),
         "last_frame_b64": b64,
-        "last_filename": fname,
+        "last_filename": fname
     })
-    if _state["threat_active"]:
-        _state["incidents_today"] += 1
-        _log_event(_state["active_camera"], " + ".join(res["threat_types"]), max(res["weapon_conf"], res["fire_conf"], res["road_conf"]), "active")
-
-# ─────────────────────────────────────────────
-#  Detection & Encoding Helpers
-# ─────────────────────────────────────────────
-
-def _analyse_detections(detections, th, frame):
-    h, w = frame.shape[:2]
-    res = {"has_threat": False, "has_fire": False, "weapon_conf": 0.0, "fire_conf": 0.0, "road_conf": 0.0, "threat_types": [], "boxes": []}
-    
-    for det in detections:
-        cls, conf, x1, y1, x2, y2 = det
-        label = {CLASS_WEAPON: "weapon", CLASS_PERSON: "person", CLASS_FIRE: "fire", CLASS_ROAD_ANOMALY: "road_anomaly"}.get(int(cls), "unknown")
-        
-        res["boxes"].append({"class": label, "conf": round(conf, 2), "bbox_px": [int(x1), int(y1), int(x2), int(y2)]})
-        
-        if int(cls) == CLASS_WEAPON:
-            res["has_threat"] = True
-            res["weapon_conf"] = max(res["weapon_conf"], conf)
-            if "Weapon" not in res["threat_types"]: res["threat_types"].append("Weapon")
-        elif int(cls) == CLASS_FIRE:
-            res["has_fire"] = True
-            res["fire_conf"] = max(res["fire_conf"], conf)
-            if "Fire" not in res["threat_types"]: res["threat_types"].append("Fire")
-        elif int(cls) == CLASS_ROAD_ANOMALY:
-            res["has_threat"] = True
-            res["road_conf"] = max(res["road_conf"], conf)
-            if "Road Anomaly" not in res["threat_types"]: res["threat_types"].append("Road Anomaly")
-            
-    return res
-
-_COLORS = {"weapon": (0,0,220), "fire": (0,120,240), "person": (220,80,0), "road_anomaly": (147,51,234)}
-
-def _encode_frame_b64(frame, boxes):
-    out = frame.copy()
-    h, w = out.shape[:2]
-    if w > 1280:
-        scale = 1280 / w
-        out = cv2.resize(out, (1280, int(h * scale)))
-    
-    for det in boxes:
-        color = _COLORS.get(det["class"], (180,180,180))
-        x1, y1, x2, y2 = det["bbox_px"]
-        # Basic scale adjust if resized
-        if w > 1280:
-            s = 1280/w
-            x1, y1, x2, y2 = int(x1*s), int(y1*s), int(x2*s), int(y2*s)
-        
-        cv2.rectangle(out, (x1,y1), (x2,y2), color, 2)
-        cv2.putText(out, f"{det['class']} {det['conf']:.2f}", (x1, y1-5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
-
-    _, buf = cv2.imencode(".jpg", out, [cv2.IMWRITE_JPEG_QUALITY, 80])
-    return "data:image/jpeg;base64," + base64.b64encode(buf).decode()
 
 
-# (Removed duplicate definition)
+# Static files mounting (Root)
 
-@app.get("/api/last_frame")
-def get_last_frame():
-    return {"frame_b64": _state["last_frame_b64"], "filename": _state["last_filename"], "camera": _state["active_camera"], "threat_active": _state["threat_active"], "threat_type": _state["threat_type"], "has_frame": bool(_state["last_frame_b64"])}
+# Final Static File Configuration
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import RedirectResponse
 
-@app.post("/api/dispatch")
-def trigger_dispatch(camera: str = "—", threat_type: str = "Unknown"):
-    _state["dispatch_count"] += 1
-    ts = datetime.now().strftime("%H:%M:%S")
-    _log_event(camera, f"🚨 Emergency dispatch #{_state['dispatch_count']}", None, "dispatched")
-    return {"dispatched": True, "dispatch_no": _state["dispatch_count"], "timestamp": ts}
+@app.get("/")
+async def root_redirect():
+    return RedirectResponse(url="/index.html")
 
-@app.on_event("startup")
-def on_startup():
-    logger.info("=== Jerico API v2.0 Started ===")
-    logger.info(f"  Models: Person & Weapon={'✅' if person_model and weapon_model else '❌'}, Fire={'✅' if fire_model else '❌'}, Road={'✅' if road_model else '❌'}")
-
-@app.on_event("shutdown")
-def on_shutdown():
-    logger.info("=== Jerico API v2.0 Shutting Down ===")
-    get_executor().shutdown(wait=False, cancel_futures=True)
-    logger.info("Worker pool shutdown complete.")
+app.mount("/", StaticFiles(directory="/Users/admin/Documents/vs code/PICA/PROJECT-JERICO-main/frontend", html=True), name="frontend")

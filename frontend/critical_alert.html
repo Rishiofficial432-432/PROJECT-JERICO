@@ -1,319 +1,398 @@
 <!DOCTYPE html>
-<html class="dark" lang="en"><head>
-<meta charset="utf-8"/>
-<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
-<title>PROJECT JERICO | CRITICAL ALERT</title>
-<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
-<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
-<script id="tailwind-config">
-        tailwind.config = {
-            darkMode: "class",
-            theme: {
-                extend: {
-                    "colors": {
-                        "on-primary-fixed": "#00201c",
-                        "tertiary-fixed-dim": "#ffb690",
-                        "outline-variant": "#3c4a46",
-                        "surface-container-highest": "#353534",
-                        "primary": "#57f1db",
-                        "tertiary-container": "#ffaa7d",
-                        "surface-container-high": "#2a2a2a",
-                        "on-surface": "#e5e2e1",
-                        "on-surface-variant": "#bacac5",
-                        "surface-variant": "#353534",
-                        "surface": "#131313",
-                        "secondary": "#ffb3ac",
-                        "on-background": "#e5e2e1",
-                        "surface-dim": "#131313",
-                        "on-tertiary": "#552100",
-                        "secondary-fixed-dim": "#ffb3ac",
-                        "outline": "#859490",
-                        "primary-fixed": "#62fae3",
-                        "on-error": "#690005",
-                        "inverse-on-surface": "#313030",
-                        "background": "#040404",
-                        "on-tertiary-fixed": "#341100",
-                        "on-primary-container": "#00574d",
-                        "inverse-primary": "#006b5f",
-                        "surface-container-lowest": "#0e0e0e",
-                        "surface-bright": "#3a3939",
-                        "on-tertiary-fixed-variant": "#783200",
-                        "on-primary-fixed-variant": "#005047",
-                        "on-secondary-fixed-variant": "#930010",
-                        "on-primary": "#003731",
-                        "on-secondary-fixed": "#410003",
-                        "on-secondary-container": "#ffd2cd",
-                        "primary-container": "#2dd4bf",
-                        "surface-container": "#201f1f",
-                        "secondary-fixed": "#ffdad6",
-                        "on-error-container": "#ffdad6",
-                        "tertiary": "#ffd0b9",
-                        "secondary-container": "#93000a",
-                        "on-tertiary-container": "#823600",
-                        "surface-tint": "#3cddc7",
-                        "error-container": "#93000a",
-                        "tertiary-fixed": "#ffdbca",
-                        "inverse-surface": "#e5e2e1",
-                        "error": "#ffb4ab",
-                        "surface-container-low": "#1c1b1b",
-                        "primary-fixed-dim": "#3cddc7",
-                        "on-secondary": "#680008"
-                    },
-                    "borderRadius": {
-                        "DEFAULT": "0px",
-                        "lg": "0px",
-                        "xl": "0px",
-                        "full": "9999px"
-                    },
-                    "fontFamily": {
-                        "headline": ["Space Grotesk"],
-                        "body": ["Inter"],
-                        "label": ["Space Grotesk"]
-                    }
-                },
-            }
-        }
-    </script>
-<style>
-        .material-symbols-outlined {
-            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
-        }
-        @keyframes pulse-red {
-            0%, 100% { box-shadow: inset 0 0 40px rgba(147, 0, 10, 0.4), 0 0 20px rgba(147, 0, 10, 0.2); }
-            50% { box-shadow: inset 0 0 60px rgba(147, 0, 10, 0.6), 0 0 40px rgba(147, 0, 10, 0.4); }
-        }
-        @keyframes flash-bg {
-            0%, 100% { background-color: #131313; }
-            50% { background-color: #93000a; }
-        }
-        .critical-pulse { animation: pulse-red 2s infinite ease-in-out; }
-        .alert-flash { animation: flash-bg 1s infinite step-end; }
-        .grid-bg {
-            background-image: linear-gradient(#1c1b1b 1px, transparent 1px), linear-gradient(90deg, #1c1b1b 1px, transparent 1px);
-            background-size: 24px 24px;
-        }
-    </style>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Jerico — Critical Alert</title>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #111515;
+      --surface: #151c1a;
+      --panel: #1a2320;
+      --line: #2a3a35;
+      --text: #eef4f1;
+      --muted: #8ea39a;
+      --ok: #34d399;
+      --warn: #f59e0b;
+      --danger: #ff5f5f;
+      --danger-2: #d7263d;
+      --danger-bg: rgba(255, 95, 95, 0.12);
+      --sidebar-w: 230px;
+    }
+
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      color: var(--text);
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at 15% 0%, #1d2a26 0%, transparent 45%),
+        radial-gradient(circle at 85% 0%, #2e171d 0%, transparent 42%),
+        linear-gradient(180deg, #0d1111 0%, var(--bg) 100%);
+    }
+
+    nav {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 56px;
+      background: rgba(15, 19, 18, 0.92);
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 18px;
+      z-index: 30;
+      backdrop-filter: blur(6px);
+    }
+
+    .brand {
+      font-family: 'Space Grotesk', sans-serif;
+      font-weight: 700;
+      letter-spacing: 0.2px;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .alarm-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      border: 1px solid #703036;
+      background: rgba(151, 33, 49, 0.28);
+      color: #ff9a9a;
+      border-radius: 999px;
+      padding: 5px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      animation: pulse 1.7s infinite;
+    }
+
+    .alarm-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--danger);
+    }
+
+    .layout {
+      display: flex;
+      padding-top: 56px;
+      min-height: 100vh;
+    }
+
+    aside {
+      position: fixed;
+      top: 56px;
+      left: 0;
+      width: var(--sidebar-w);
+      height: calc(100vh - 56px);
+      border-right: 1px solid var(--line);
+      background: rgba(21, 28, 26, 0.92);
+      padding: 14px 10px;
+    }
+
+    .s-label {
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      padding: 0 8px;
+      margin-bottom: 8px;
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      color: var(--muted);
+      text-decoration: none;
+      padding: 9px 10px;
+      border-radius: 10px;
+      font-size: 13px;
+      margin-bottom: 4px;
+      border: 1px solid transparent;
+    }
+
+    .nav-item:hover { background: #1f2b27; color: var(--text); }
+    .nav-item.active {
+      background: var(--danger-bg);
+      color: #ffc1c1;
+      border-color: #6f2d35;
+    }
+
+    main {
+      margin-left: var(--sidebar-w);
+      flex: 1;
+      padding: 20px;
+      display: grid;
+      gap: 16px;
+      grid-template-columns: 1.4fr 0.9fr;
+      align-items: start;
+    }
+
+    .critical-banner {
+      grid-column: 1 / -1;
+      border: 1px solid #7a2e36;
+      background: linear-gradient(90deg, rgba(114, 24, 37, 0.33) 0%, rgba(84, 15, 26, 0.22) 100%);
+      border-radius: 14px;
+      padding: 14px 16px;
+      display: flex;
+      justify-content: space-between;
+      gap: 14px;
+      align-items: center;
+    }
+
+    .critical-title {
+      font-family: 'Space Grotesk', sans-serif;
+      font-weight: 700;
+      font-size: 15px;
+      color: #ffb4b4;
+    }
+
+    .critical-sub { font-size: 12px; color: #e9aaaa; margin-top: 3px; }
+
+    .btn {
+      border: 1px solid var(--line);
+      background: #202a27;
+      color: var(--text);
+      padding: 8px 12px;
+      border-radius: 10px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn:hover { background: #25312d; }
+    .btn.danger { border-color: #7a2e36; background: #73202b; color: #fff; }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      overflow: hidden;
+      box-shadow: 0 14px 26px rgba(0, 0, 0, 0.24);
+    }
+
+    .card-head {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .feed {
+      position: relative;
+      min-height: 360px;
+      background: #0a0e0d;
+      overflow: hidden;
+    }
+
+    .feed img {
+      width: 100%;
+      min-height: 360px;
+      object-fit: cover;
+      filter: saturate(0.8) contrast(1.03) brightness(0.9);
+    }
+
+    .scan {
+      position: absolute;
+      inset: 0;
+      background: repeating-linear-gradient(180deg, transparent, transparent 18px, rgba(255, 255, 255, 0.02) 18px, rgba(255, 255, 255, 0.02) 19px);
+      pointer-events: none;
+    }
+
+    .bbox {
+      position: absolute;
+      border: 2px solid;
+      box-shadow: 0 0 12px currentColor;
+    }
+
+    .bbox span {
+      position: absolute;
+      top: -20px;
+      left: 0;
+      font-size: 10px;
+      padding: 2px 7px;
+      border-radius: 5px;
+      font-weight: 700;
+      color: #fff;
+      background: currentColor;
+      white-space: nowrap;
+    }
+
+    .weapon { color: var(--danger); }
+    .person { color: #60a5fa; }
+
+    .kpis {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+      padding: 12px;
+      border-top: 1px solid var(--line);
+      background: #121917;
+    }
+
+    .kpi {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px;
+      background: #1a2421;
+    }
+
+    .kpi .l { font-size: 11px; color: var(--muted); }
+    .kpi .v { font-family: 'Space Grotesk', sans-serif; margin-top: 4px; font-size: 20px; font-weight: 700; }
+    .kpi .v.d { color: #ff9a9a; }
+
+    .panel { display: grid; gap: 12px; }
+
+    .rows { padding: 6px 0; }
+    .row {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--line);
+      font-size: 13px;
+    }
+    .row:last-child { border-bottom: none; }
+    .rk { color: var(--muted); }
+    .rv { font-weight: 600; }
+
+    .badge {
+      font-size: 11px;
+      padding: 2px 9px;
+      border-radius: 999px;
+      border: 1px solid;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .badge.danger { border-color: #7a2e36; color: #ff9a9a; background: rgba(151, 33, 49, 0.23); }
+    .badge.ok { border-color: #2f6d55; color: #8ae2be; background: rgba(52, 211, 153, 0.15); }
+
+    .dispatch {
+      border: 1px solid #7a2e36;
+      border-radius: 14px;
+      background: rgba(151, 33, 49, 0.14);
+      padding: 14px;
+    }
+
+    .dispatch h4 {
+      font-family: 'Space Grotesk', sans-serif;
+      color: #ffc1c1;
+      margin-bottom: 8px;
+      font-size: 14px;
+    }
+
+    .dispatch p { font-size: 13px; color: #efc7c7; line-height: 1.5; margin-bottom: 12px; }
+
+    @keyframes pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(255, 95, 95, 0.35); }
+      50% { box-shadow: 0 0 0 8px rgba(255, 95, 95, 0.06); }
+    }
+
+    @media (max-width: 1100px) {
+      main { grid-template-columns: 1fr; }
+      .feed { min-height: 290px; }
+      .feed img { min-height: 290px; }
+    }
+
+    @media (max-width: 820px) {
+      aside { position: static; width: 100%; height: auto; border-right: none; border-bottom: 1px solid var(--line); }
+      .layout { display: block; }
+      main { margin-left: 0; padding: 14px; }
+      nav { padding: 0 10px; }
+      .critical-banner { flex-direction: column; align-items: flex-start; }
+      .kpis { grid-template-columns: 1fr; }
+    }
+  </style>
 </head>
-<body class="bg-background text-on-surface font-body selection:bg-error selection:text-on-error min-h-screen grid-bg overflow-hidden flex flex-col critical-pulse">
-<!-- TopNavBar -->
-<header class="fixed top-0 left-0 w-full z-50 flex justify-between items-center px-6 h-16 alert-flash border-b border-error/30">
-  <div class="flex items-center gap-4">
-    <span class="text-2xl font-bold tracking-tighter text-white font-headline">PROJECT JERICO</span>
-    <div class="h-6 w-[1px] bg-white/20"></div>
-    <span class="font-headline font-bold text-white tracking-widest uppercase">🚨 CRITICAL THREAT DETECTED — WEAPON + VIOLENCE DETECTED</span>
-  </div>
-  <div class="flex items-center gap-6">
-    <div class="flex gap-4">
-      <span class="material-symbols-outlined text-white">sensors</span>
-      <span class="material-symbols-outlined text-white" style="font-variation-settings: 'FILL' 1;">emergency</span>
-      <span class="material-symbols-outlined text-white">schedule</span>
-    </div>
-  </div>
-</header>
-<div class="flex flex-1 pt-16 h-screen">
-<!-- SideNavBar -->
-<aside class="fixed left-0 top-16 h-[calc(100vh-64px)] w-64 z-40 flex flex-col border-r border-error/20 bg-surface-container-lowest">
-  <div class="p-6 border-b border-outline-variant/10">
-    <div class="flex items-center gap-3">
-      <div class="w-10 h-10 bg-error/20 border border-error/50 flex items-center justify-center">
-        <span class="material-symbols-outlined text-error" style="font-variation-settings: 'FILL' 1;">security</span>
-      </div>
-      <div>
-        <div class="font-headline text-[0.6875rem] uppercase text-error tracking-tighter font-bold">SECTOR-7</div>
-        <div class="text-[0.6875rem] text-white/40 uppercase font-headline">OPERATOR: JERICO</div>
-      </div>
-    </div>
-  </div>
-  <nav class="flex-1 py-4">
-    <div class="px-4 py-2 flex items-center gap-3 text-white/40 hover:bg-surface-bright/10 transition-all cursor-pointer group">
-      <span class="material-symbols-outlined">radar</span>
-      <span class="font-headline text-[0.6875rem] uppercase tracking-widest">Sensors</span>
-    </div>
-    <div class="px-4 py-2 flex items-center gap-3 text-error font-bold border-l-4 border-error bg-error/5 cursor-pointer">
-      <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">visibility</span>
-      <span class="font-headline text-[0.6875rem] uppercase tracking-widest">Detection</span>
-    </div>
-    <div class="px-4 py-2 flex items-center gap-3 text-white/40 hover:bg-surface-bright/10 transition-all cursor-pointer">
-      <span class="material-symbols-outlined">query_stats</span>
-      <span class="font-headline text-[0.6875rem] uppercase tracking-widest">Analytics</span>
-    </div>
-    <div class="px-4 py-2 flex items-center gap-3 text-white/40 hover:bg-surface-bright/10 transition-all cursor-pointer">
-      <span class="material-symbols-outlined">settings</span>
-      <span class="font-headline text-[0.6875rem] uppercase tracking-widest">Settings</span>
-    </div>
-    <!-- Alert Section in Sidebar -->
-    <div class="mt-8 px-4">
-      <div class="font-headline text-[0.6875rem] uppercase text-error mb-4 font-bold tracking-widest">Protocol Broadcasts</div>
-      <div class="space-y-3">
-        <div class="flex items-center gap-2 text-[0.75rem] text-white/60">
-          <span class="material-symbols-outlined text-[14px] text-error">notifications_active</span>
-          <span>ntfy push notification sent</span>
-        </div>
-        <div class="flex items-center gap-2 text-[0.75rem] text-white/60">
-          <span class="material-symbols-outlined text-[14px] text-error">mail</span>
-          <span>email sent to admin@</span>
-        </div>
-        <div class="flex items-center gap-2 text-[0.75rem] text-white/60">
-          <span class="material-symbols-outlined text-[14px] text-error">chat</span>
-          <span>WhatsApp sent</span>
-        </div>
-      </div>
-    </div>
+<body>
+  <nav>
+    <div class="brand">Jerico Critical Ops</div>
+    <div class="alarm-chip"><span class="alarm-dot"></span> ACTIVE CRITICAL INCIDENT</div>
   </nav>
-  <div class="p-6 mt-auto border-t border-outline-variant/10">
-    <button class="w-full bg-error text-on-error py-3 font-headline text-[0.6875rem] font-bold uppercase tracking-widest hover:shadow-[0_0_15px_rgba(255,180,171,0.4)] transition-all">
-      DEPLOY CONFIG
-    </button>
-  </div>
-</aside>
-<!-- Main Content Area -->
-<main class="ml-64 flex-1 flex flex-col p-6 gap-6 overflow-y-auto">
-  <!-- Top KPI Grid -->
-  <div class="grid grid-cols-5 gap-4">
-    <div class="bg-surface-container-low border-l-2 border-error p-4">
-      <div class="font-headline text-[0.6875rem] uppercase text-white/40 mb-1">Threat Level</div>
-      <div class="text-xl font-headline font-bold text-error">🔴 CRITICAL</div>
-    </div>
-    <div class="bg-surface-container-low border-l-2 border-error p-4">
-      <div class="font-headline text-[0.6875rem] uppercase text-white/40 mb-1">Weapons Detected</div>
-      <div class="text-2xl font-headline font-bold text-white">1</div>
-    </div>
-    <div class="bg-surface-container-low border-l-2 border-tertiary p-4">
-      <div class="font-headline text-[0.6875rem] uppercase text-white/40 mb-1">Fire Events</div>
-      <div class="text-2xl font-headline font-bold text-white">0</div>
-    </div>
-    <div class="bg-surface-container-low border-l-2 border-error p-4">
-      <div class="font-headline text-[0.6875rem] uppercase text-white/40 mb-1">Anomaly Score</div>
-      <div class="text-2xl font-headline font-bold text-error">89.3%</div>
-    </div>
-    <div class="bg-surface-container-low border-l-2 border-primary p-4">
-      <div class="font-headline text-[0.6875rem] uppercase text-white/40 mb-1">Model Status</div>
-      <div class="text-xl font-headline font-bold text-primary">✅ Active</div>
-    </div>
-  </div>
-  <div class="flex-1 flex gap-6 min-h-0">
-    <!-- Camera Feed Column -->
-    <div class="flex-[2] flex flex-col gap-4">
-      <div class="relative flex-1 bg-black border border-error/40 group overflow-hidden">
-        <!-- Red Tactical Overlay -->
-        <div class="absolute inset-0 bg-error/10 pointer-events-none"></div>
-        <div class="absolute top-4 left-4 w-8 h-8 border-t-2 border-l-2 border-error"></div>
-        <div class="absolute top-4 right-4 w-8 h-8 border-t-2 border-r-2 border-error"></div>
-        <div class="absolute bottom-4 left-4 w-8 h-8 border-b-2 border-l-2 border-error"></div>
-        <div class="absolute bottom-4 right-4 w-8 h-8 border-b-2 border-r-2 border-error"></div>
-        <div class="absolute inset-0 flex items-center justify-center pointer-events-none opacity-20">
-          <span class="text-4xl font-headline font-black text-error tracking-[1em] uppercase">THREAT ACQUIRED</span>
-        </div>
-        <!-- Bounding Boxes Simulation -->
-        <div class="absolute top-1/4 left-1/3 w-32 h-48 border-2 border-error shadow-[0_0_15px_#ffb4ab]">
-          <div class="absolute -top-6 left-0 bg-error text-white text-[10px] px-2 py-0.5 font-bold">WEAPON: 0.94</div>
-        </div>
-        <img alt="Security feed" class="w-full h-full object-cover grayscale brightness-50"
-             src="https://lh3.googleusercontent.com/aida-public/AB6AXuCH3rmPV6FxutnTA7YUzyZpX4nX1PgJvQHYgj4g_xngWbI0oeKyGYPgM-DRvPyPMbqDJKRtHKi70FZSgEYYJsYzBx6N3pMtNlL5FxQxgc2zHwzvgunUI7GCdbsMOylqPYnSZds-SbLub6iicLvhUYqVV_TDTondP3SC6Q4krpI38boWI62vYwTRzr93d4uXaSOsuE0Ngb79RcmGhAKB9C_Z_26qJgoe1Rn7XqSEaeJCEx1zRFm2d75upXg-MVbVH5bT4oxz0d1DnnVR"/>
-        <div class="absolute bottom-4 left-6 flex items-center gap-3">
-          <div class="w-3 h-3 bg-error rounded-full animate-pulse"></div>
-          <span class="font-headline text-[0.75rem] font-bold text-error uppercase tracking-widest">CCTV-03 | THREAT DETECTED | RECORDING...</span>
-        </div>
-      </div>
-      <!-- Bottom Log -->
-      <div class="h-48 bg-surface-container-lowest border border-outline-variant/10 overflow-hidden flex flex-col">
-        <div class="px-4 py-2 border-b border-outline-variant/10 flex justify-between bg-surface-container-low">
-          <span class="text-[0.6875rem] font-headline uppercase text-white/40 tracking-widest">Event Telemetry Log</span>
-          <span class="text-[0.6875rem] font-headline text-error tracking-widest">[ SYSTEM OVERRIDE ]</span>
-        </div>
-        <div class="flex-1 overflow-y-auto font-mono text-[0.75rem]">
-          <div class="flex items-center gap-4 px-4 py-2 bg-error/10 border-l-4 border-error animate-pulse">
-            <span class="text-white/40">14:02:44.12</span>
-            <span class="text-error font-bold w-20">CCTV-03</span>
-            <span class="text-white flex-1">DETECTION: WEAPON + VIOLENCE [POS: 0.87]</span>
-            <span class="px-2 py-0.5 bg-error text-white font-bold text-[10px]">ACTIVE</span>
-          </div>
-          <div class="flex items-center gap-4 px-4 py-2 border-b border-outline-variant/5 text-white/40">
-            <span>14:02:42.05</span>
-            <span class="w-20">CCTV-03</span>
-            <span>ANOMALOUS MOVEMENT IDENTIFIED</span>
-            <span class="text-white/20">RESOLVED</span>
-          </div>
-          <div class="flex items-center gap-4 px-4 py-2 border-b border-outline-variant/5 text-white/40">
-            <span>14:02:40.91</span>
-            <span class="w-20">CCTV-01</span>
-            <span>SYSTEMS NOMINAL</span>
-            <span class="text-white/20">LOGGED</span>
-          </div>
-        </div>
-      </div>
-    </div>
-    <!-- Right Analytics Panel -->
-    <aside class="w-80 flex flex-col gap-4">
-      <!-- Threat Summary Card -->
-      <div class="bg-surface-container border border-error/30 p-5 flex flex-col gap-4">
-        <div class="font-headline text-[0.6875rem] font-bold text-error uppercase tracking-widest">Threat Matrix Analysis</div>
-        <div class="space-y-3">
-          <div class="p-3 bg-error/5 border-l-2 border-error">
-            <div class="text-[0.625rem] uppercase text-white/40 mb-1">Identified Threats</div>
-            <div class="text-[0.75rem] font-bold text-error leading-tight">🗡️ WEAPON (YOLO) | 🧨 VIOLENT ACTION</div>
-          </div>
-          <div>
-            <div class="flex justify-between text-[0.6875rem] uppercase mb-1">
-              <span class="text-white/40">Confidence Gauge</span>
-              <span class="text-error font-bold">0.87</span>
-            </div>
-            <div class="h-1.5 bg-white/10 w-full overflow-hidden">
-              <div class="h-full bg-error w-[87%] shadow-[0_0_10px_#ffb4ab]"></div>
-            </div>
-          </div>
-          <div>
-            <div class="flex justify-between text-[0.6875rem] uppercase mb-1">
-              <span class="text-white/40">Violence Prob.</span>
-              <span class="text-error font-bold">89%</span>
-            </div>
-            <div class="h-1.5 bg-white/10 w-full overflow-hidden">
-              <div class="h-full bg-error w-[89%] shadow-[0_0_10px_#ffb4ab]"></div>
-            </div>
-          </div>
-        </div>
-      </div>
-      <!-- Emergency Action Card -->
-      <div class="bg-surface-container-high border-2 border-error p-5 relative overflow-hidden">
-        <div class="absolute top-0 right-0 p-1 bg-error text-white font-black text-[8px] tracking-tighter">LEVEL 5</div>
-        <div class="flex items-center gap-3 mb-4">
-          <span class="material-symbols-outlined text-error" style="font-variation-settings: 'FILL' 1;">warning</span>
-          <div class="font-headline text-[0.75rem] font-bold text-error uppercase leading-tight">EMERGENCY DISPATCH ACTIVATED</div>
-        </div>
-        <div class="text-[0.75rem] text-white/80 leading-relaxed mb-4">
-          Police units notified. ETA: <span class="text-error font-bold">~8 min</span>.<br/>
-          GPS: <span class="text-error underline">12.9716° N, 77.5946° E</span>
-        </div>
-        <button class="w-full bg-error/10 border border-error text-error py-3 font-headline text-[0.6875rem] font-bold uppercase tracking-widest hover:bg-error hover:text-white transition-all shadow-[0_0_15px_rgba(255,180,171,0.2)]">
-          NEUTRALIZE ALERT
-        </button>
-      </div>
-      <!-- HUD Graphic Recess -->
-      <div class="flex-1 bg-surface-container-lowest border border-outline-variant/10 p-4 relative overflow-hidden">
-        <div class="absolute inset-0 opacity-10">
-          <div class="w-full h-full border-4 border-dashed border-error rounded-full animate-[spin_20s_linear_infinite]"></div>
-        </div>
-        <div class="relative z-10 h-full flex flex-col justify-between">
-          <div class="font-headline text-[0.625rem] uppercase text-white/20 tracking-tighter">Neural Pattern Sync</div>
-          <div class="flex flex-col items-center justify-center gap-2">
-            <div class="text-4xl font-headline font-light text-error/40">12.04</div>
-            <div class="text-[0.625rem] text-white/40">LATENCY MS</div>
-          </div>
-          <div class="flex justify-between items-end">
-            <div class="space-y-1">
-              <div class="w-8 h-[2px] bg-error"></div>
-              <div class="w-12 h-[2px] bg-error"></div>
-              <div class="w-4 h-[2px] bg-error/20"></div>
-            </div>
-            <div class="text-[0.625rem] font-mono text-white/20">JRC-SEC-V7.1</div>
-          </div>
-        </div>
-      </div>
+
+  <div class="layout">
+    <aside>
+      <div class="s-label">Navigation</div>
+      <a class="nav-item" href="index.html"><span>Dashboard</span></a>
+      <a class="nav-item" href="upload.html"><span>Upload</span></a>
+      <a class="nav-item" href="alert.html"><span>Alerts</span></a>
+      <a class="nav-item active" href="critical_alert.html"><span>Critical</span><span>1</span></a>
     </aside>
+
+    <main>
+      <section class="critical-banner">
+        <div>
+          <div class="critical-title">Weapon + Violent Action Confirmed</div>
+          <div class="critical-sub">CCTV-03 locked. Incident escalated to emergency dispatch with live telemetry.</div>
+        </div>
+        <div style="display:flex; gap:8px;">
+          <button class="btn">View Map</button>
+          <button class="btn danger">Neutralize Alert</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <span>Live Feed • CCTV-03</span>
+          <span style="color:#ff9a9a;">REC • THREAT</span>
+        </div>
+        <div class="feed">
+          <img src="https://lh3.googleusercontent.com/aida-public/AB6AXuCH3rmPV6FxutnTA7YUzyZpX4nX1PgJvQHYgj4g_xngWbI0oeKyGYPgM-DRvPyPMbqDJKRtHKi70FZSgEYYJsYzBx6N3pMtNlL5FxQxgc2zHwzvgunUI7GCdbsMOylqPYnSZds-SbLub6iicLvhUYqVV_TDTondP3SC6Q4krpI38boWI62vYwTRzr93d4uXaSOsuE0Ngb79RcmGhAKB9C_Z_26qJgoe1Rn7XqSEaeJCEx1zRFm2d75upXg-MVbVH5bT4oxz0d1DnnVR" alt="Critical feed"/>
+          <div class="scan"></div>
+          <div class="bbox weapon" style="left:41%;top:19%;width:22%;height:53%;"><span>WEAPON 0.87</span></div>
+          <div class="bbox person" style="left:9%;top:17%;width:20%;height:58%;"><span>PERSON 0.76</span></div>
+        </div>
+        <div class="kpis">
+          <div class="kpi"><div class="l">Threat level</div><div class="v d">CRITICAL</div></div>
+          <div class="kpi"><div class="l">Anomaly score</div><div class="v d">89.3%</div></div>
+          <div class="kpi"><div class="l">Weapon confidence</div><div class="v d">0.87</div></div>
+          <div class="kpi"><div class="l">Fire events</div><div class="v">0</div></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <article class="card">
+          <div class="card-head"><span>Threat Analysis</span><span class="badge danger">Active</span></div>
+          <div class="rows">
+            <div class="row"><span class="rk">Threats</span><span class="rv">WEAPON + VIOLENCE</span></div>
+            <div class="row"><span class="rk">Active camera</span><span class="rv">CCTV-03</span></div>
+            <div class="row"><span class="rk">Road anomaly</span><span class="rv">0.21</span></div>
+            <div class="row"><span class="rk">Pipeline severity</span><span class="rv">CRITICAL</span></div>
+            <div class="row"><span class="rk">Scene reasoning</span><span class="rv">Suspicious armed movement</span></div>
+          </div>
+        </article>
+
+        <article class="dispatch">
+          <h4>Emergency Dispatch Activated</h4>
+          <p>Police response has been sent with geo-tagged location and frame snapshot. Estimated arrival is 6-8 minutes. Nearby units and command center were notified.</p>
+          <div style="display:flex; gap:8px;">
+            <button class="btn" style="flex:1;">Dispatch Log</button>
+            <button class="btn danger" style="flex:1;">Escalate</button>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-head"><span>Protocol Broadcast</span><span class="badge ok">Sent</span></div>
+          <div class="rows">
+            <div class="row"><span class="rk">Push (ntfy)</span><span class="rv">Delivered</span></div>
+            <div class="row"><span class="rk">Email</span><span class="rv">Delivered</span></div>
+            <div class="row"><span class="rk">WhatsApp</span><span class="rv">Delivered</span></div>
+          </div>
+        </article>
+      </section>
+    </main>
   </div>
-</main>
-</div>
-<!-- UI Overlay for scanning effect -->
-<div class="fixed inset-0 pointer-events-none border-[12px] border-error/5 z-[60]"></div>
-</body></html>
+</body>
+</html>

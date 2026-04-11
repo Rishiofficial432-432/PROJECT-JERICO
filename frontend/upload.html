@@ -4,21 +4,22 @@
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Jerico — Upload & Analyse</title>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet"/>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600&display=swap" rel="stylesheet"/>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
-      --bg: #fafafa; --surface: #fff; --border: #e4e4e7;
-      --text: #18181b; --muted: #71717a; --subtle: #f4f4f5;
+      --bg: #f3f5f2; --surface: #fbfcf8; --border: #d8ded1;
+      --text: #111713; --muted: #56645c; --subtle: #edf2eb;
       --green: #16a34a; --green-bg: #f0fdf4; --green-border: #bbf7d0;
       --red: #dc2626; --red-bg: #fef2f2; --red-border: #fecaca;
       --orange: #ea580c; --orange-bg: #fff7ed; --orange-border: #fed7aa;
       --sidebar-w: 200px;
     }
-    body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.5; min-height: 100vh; display: flex; flex-direction: column; }
+    body { font-family: 'Plus Jakarta Sans', sans-serif; background: radial-gradient(circle at 5% 0%, #e8f0e6 0%, var(--bg) 45%), linear-gradient(180deg, #f6faf5 0%, #eef3ec 100%); color: var(--text); font-size: 14px; line-height: 1.5; min-height: 100vh; display: flex; flex-direction: column; }
 
     nav { position: fixed; top: 0; left: 0; right: 0; height: 52px; background: var(--surface); border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; padding: 0 24px; z-index: 100; }
-    .nav-logo { font-weight: 600; font-size: 15px; }
+    .nav-logo { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 15px; }
+    .nav-right { display: flex; align-items: center; gap: 12px; }
     .status-badge { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--green); font-weight: 500; }
     .status-dot { width: 7px; height: 7px; background: var(--green); border-radius: 50%; }
     .btn-ghost { background: none; border: 1px solid var(--border); color: var(--text); padding: 6px 12px; font-family: inherit; font-size: 13px; font-weight: 500; border-radius: 6px; cursor: pointer; text-decoration: none; display: inline-block; }
@@ -52,6 +53,26 @@
     .chip-fire   { background: var(--orange-bg); color: var(--orange); border-color: var(--orange-border); }
     .chip-road   { background: #fdf2f8; color: #db2777; border-color: #fbcfe8; }
     .chip-anomaly{ background: #faf5ff; color: #7c3aed; border-color: #ddd6fe; }
+    .chip-vehicle{ background: #eff6ff; color: #1d4ed8; border-color: #bfdbfe; }
+
+    /* ── System State ── */
+    .state-grid { display: grid; grid-template-columns: 1.2fr 1fr; gap: 14px; margin-bottom: 20px; }
+    .state-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+    .state-head { padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+    .state-title { font-size: 12px; font-weight: 600; }
+    .state-note { font-size: 11px; color: var(--muted); }
+    .state-body { padding: 10px 16px; }
+    .model-row { display: grid; grid-template-columns: minmax(120px, 1fr) minmax(120px, 1fr) 70px; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--subtle); align-items: center; }
+    .model-row:last-child { border-bottom: none; }
+    .model-name { font-size: 12px; font-weight: 500; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .model-meta { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .model-status { font-size: 11px; font-weight: 600; text-align: right; }
+    .model-status.ready { color: var(--green); }
+    .model-status.down { color: var(--red); }
+    .krow { display: flex; justify-content: space-between; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--subtle); }
+    .krow:last-child { border-bottom: none; }
+    .kkey { font-size: 12px; color: var(--muted); }
+    .kval { font-size: 12px; font-weight: 600; color: var(--text); text-align: right; }
 
     /* ── Drop Zone ── */
     .drop-zone { border: 1.5px dashed var(--border); border-radius: 10px; background: var(--surface); padding: 48px 24px; display: flex; flex-direction: column; align-items: center; text-align: center; cursor: pointer; margin-bottom: 24px; transition: border-color 0.2s, background 0.2s; }
@@ -114,6 +135,24 @@
     .btn-danger:hover { background: #b91c1c; }
 
     #noResults { text-align: center; padding: 40px; color: var(--muted); font-size: 13px; }
+
+    @media (max-width: 1100px) {
+      .results-grid { grid-template-columns: 1fr; }
+      .state-grid { grid-template-columns: 1fr; }
+      .model-row { grid-template-columns: 1fr auto; }
+      .model-meta { grid-column: 1 / -1; }
+      main { padding: 18px; }
+    }
+
+    @media (max-width: 820px) {
+      aside { position: static; width: 100%; height: auto; border-right: none; border-bottom: 1px solid var(--border); }
+      .layout { display: block; }
+      main { margin-left: 0; }
+      .settings-row { flex-direction: column; align-items: stretch; gap: 10px; }
+      .setting-item { width: 100%; }
+      nav { padding: 0 12px; }
+      .nav-right { gap: 8px; }
+    }
   </style>
 </head>
 <body>
@@ -138,20 +177,53 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
         Upload
       </a>
-      <a href="#" class="nav-item">
+      <a href="alert.html" class="nav-item">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
         Alerts
       </a>
-      <a href="#" class="nav-item">
+      <a href="critical_alert.html" class="nav-item">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41M20 12h-2M17.66 17.66l-1.41-1.41M12 20v-2M6.34 17.66l1.41-1.41M4 12h2M6.34 6.34l1.41 1.41"/></svg>
-        Settings
+        Critical
       </a>
     </div>
+
   </aside>
 
   <main>
     <h1 class="page-title">Upload & Analyse</h1>
     <p class="page-sub">Upload CCTV footage for live AI threat detection.</p>
+
+    <!-- Current system state -->
+    <div class="state-grid">
+      <div class="state-card">
+        <div class="state-head">
+          <span class="state-title">Current model stack</span>
+          <span class="state-note" id="stateModelCount">Loading...</span>
+        </div>
+        <div class="state-body" id="modelStateList">
+          <div class="model-row">
+            <span class="model-name">Loading models...</span>
+            <span class="model-meta">Please wait</span>
+            <span class="model-status">—</span>
+          </div>
+        </div>
+      </div>
+      <div class="state-card">
+        <div class="state-head">
+          <span class="state-title">Runtime details</span>
+          <span class="state-note" id="stateMode">Connecting</span>
+        </div>
+        <div class="state-body">
+          <div class="krow"><span class="kkey">Architecture mode</span><span class="kval" id="rtArch">—</span></div>
+          <div class="krow"><span class="kkey">Tracker</span><span class="kval" id="rtTracker">—</span></div>
+          <div class="krow"><span class="kkey">Weapon threshold</span><span class="kval" id="rtW">—</span></div>
+          <div class="krow"><span class="kkey">Fire threshold</span><span class="kval" id="rtF">—</span></div>
+          <div class="krow"><span class="kkey">Road threshold</span><span class="kval" id="rtR">—</span></div>
+          <div class="krow"><span class="kkey">Armed person 2D gate</span><span class="kval" id="rtP">—</span></div>
+          <div class="krow"><span class="kkey">Last scan</span><span class="kval" id="rtLast">—</span></div>
+        </div>
+      </div>
+    </div>
 
     <!-- Settings -->
     <div class="settings-bar">
@@ -167,17 +239,17 @@
         <div class="setting-item">
           <span class="setting-chip chip-person">Person</span>
           <label>Min confidence</label>
-          <input type="range" id="personSlider" min="0.10" max="0.99" step="0.05" value="0.60"
+          <input type="range" id="personSlider" min="0.10" max="0.99" step="0.05" value="0.45"
                  oninput="document.getElementById('personVal').textContent=parseFloat(this.value).toFixed(2)"/>
-          <span class="setting-val" id="personVal">0.60</span>
+          <span class="setting-val" id="personVal">0.45</span>
         </div>
         <!-- Weapon -->
         <div class="setting-item">
           <span class="setting-chip chip-weapon">Weapon</span>
           <label>Min confidence</label>
-          <input type="range" id="weaponSlider" min="0.10" max="0.99" step="0.05" value="0.85"
+          <input type="range" id="weaponSlider" min="0.10" max="0.99" step="0.05" value="0.55"
                  oninput="document.getElementById('weaponVal').textContent=parseFloat(this.value).toFixed(2)"/>
-          <span class="setting-val" id="weaponVal">0.85</span>
+          <span class="setting-val" id="weaponVal">0.55</span>
         </div>
       </div>
       <div class="settings-row">
@@ -185,27 +257,35 @@
         <div class="setting-item">
           <span class="setting-chip chip-fire">Fire</span>
           <label>Min confidence</label>
-          <input type="range" id="fireSlider" min="0.10" max="0.99" step="0.05" value="0.70"
+          <input type="range" id="fireSlider" min="0.10" max="0.99" step="0.05" value="0.82"
                  oninput="document.getElementById('fireVal').textContent=parseFloat(this.value).toFixed(2)"/>
-          <span class="setting-val" id="fireVal">0.70</span>
+          <span class="setting-val" id="fireVal">0.82</span>
         </div>
-        <!-- Road Anomaly (New) -->
+        <!-- Vehicle -->
         <div class="setting-item">
-          <span class="setting-chip chip-road">Road Anomaly</span>
+          <span class="setting-chip chip-vehicle">Vehicle</span>
           <label>Min confidence</label>
-          <input type="range" id="roadSlider" min="0.10" max="0.99" step="0.05" value="0.60"
-                 oninput="document.getElementById('roadVal').textContent=parseFloat(this.value).toFixed(2)"/>
-          <span class="setting-val" id="roadVal">0.60</span>
+          <input type="range" id="vehicleSlider" min="0.10" max="0.99" step="0.05" value="0.35"
+                 oninput="document.getElementById('vehicleVal').textContent=parseFloat(this.value).toFixed(2)"/>
+          <span class="setting-val" id="vehicleVal">0.35</span>
         </div>
       </div>
       <div class="settings-row">
+        <!-- Road Anomaly -->
+        <div class="setting-item">
+          <span class="setting-chip chip-road">Road Anomaly</span>
+          <label>Min confidence</label>
+          <input type="range" id="roadSlider" min="0.10" max="0.99" step="0.05" value="0.40"
+                 oninput="document.getElementById('roadVal').textContent=parseFloat(this.value).toFixed(2)"/>
+          <span class="setting-val" id="roadVal">0.40</span>
+        </div>
         <!-- Anomaly -->
         <div class="setting-item">
           <span class="setting-chip chip-anomaly">Social Anomaly</span>
           <label>Alert above (%)</label>
-          <input type="range" id="anomalySlider" min="10" max="99" step="5" value="70"
+          <input type="range" id="anomalySlider" min="10" max="99" step="5" value="65"
                  oninput="document.getElementById('anomalyVal').textContent=this.value+'%'"/>
-          <span class="setting-val" id="anomalyVal">70%</span>
+          <span class="setting-val" id="anomalyVal">65%</span>
         </div>
       </div>
     </div>
@@ -229,6 +309,8 @@
       </div>
       <div class="prog-bar"><div class="prog-fill" id="progFill" style="width:0%"></div></div>
       <div class="prog-status" id="progStatus">Uploading...</div>
+      <!-- Live Video Feed -->
+      <img id="livePreview" src="" style="width:100%; border-radius:8px; margin-top:16px; border:1px solid var(--border); display:none;" />
     </div>
 
     <!-- Error box -->
@@ -289,9 +371,9 @@
               <span class="analysis-key">Social anomaly score</span>
               <span class="analysis-val" id="rAnomalyScore">—</span>
             </div>
-            <div class="analysis-row">
-              <span class="analysis-key">Scene</span>
-              <span class="analysis-val" id="rScene">—</span>
+            <div class="analysis-row" style="flex-direction:column; align-items:flex-start; gap:8px;">
+              <span class="analysis-key">AI Reasoning</span>
+              <span id="rScene" style="font-size:12px; color:var(--text); font-style:italic; line-height:1.4;">—</span>
             </div>
             <div id="alertBanners" style="padding:8px 0;"></div>
           </div>
@@ -312,7 +394,47 @@
 </div>
 
 <script>
-  const API = 'http://localhost:8000/api';
+  const API = '/api';
+
+  async function loadSystemState() {
+    try {
+      const [statusResp, metricsResp] = await Promise.all([
+        fetch(`${API}/status`),
+        fetch(`${API}/metrics`),
+      ]);
+      if (!statusResp.ok || !metricsResp.ok) throw new Error('Status endpoint unavailable');
+
+      const st = await statusResp.json();
+      const mt = await metricsResp.json();
+      const models = st.models || {};
+      const list = document.getElementById('modelStateList');
+      const keys = Object.keys(models);
+
+      list.innerHTML = keys.map((k) => {
+        const m = models[k];
+        const ok = !!m.ready;
+        return `<div class="model-row">
+          <span class="model-name">${m.label || k}</span>
+          <span class="model-meta">${m.family || '—'} · ${m.weights || '—'}</span>
+          <span class="model-status ${ok ? 'ready' : 'down'}">${ok ? 'Ready' : 'Offline'}</span>
+        </div>`;
+      }).join('');
+
+      document.getElementById('stateModelCount').textContent = `${st.models_active || 0}/${st.models_total || keys.length} active`;
+      document.getElementById('stateMode').textContent = (st.models_active || 0) === (st.models_total || keys.length) ? 'Healthy' : 'Degraded';
+
+      document.getElementById('rtArch').textContent = st.architecture_mode || '—';
+      document.getElementById('rtTracker').textContent = st.threat_logic?.tracker || '—';
+      document.getElementById('rtW').textContent = st.threat_logic?.weapon_conf_threshold?.toFixed(2) ?? '—';
+      document.getElementById('rtF').textContent = st.threat_logic?.fire_conf_threshold?.toFixed(2) ?? '—';
+      document.getElementById('rtR').textContent = st.threat_logic?.road_conf_threshold?.toFixed(2) ?? '—';
+      document.getElementById('rtP').textContent = st.threat_logic?.armed_person_pixel_distance ? `${st.threat_logic.armed_person_pixel_distance}px` : '—';
+      document.getElementById('rtLast').textContent = mt.last_scan || 'Never';
+    } catch (e) {
+      document.getElementById('stateModelCount').textContent = 'Unavailable';
+      document.getElementById('stateMode').textContent = 'Offline';
+    }
+  }
 
   function ev(e, action) {
     e.preventDefault();
@@ -350,7 +472,7 @@
 
     // Animate progress bar during upload
     let p = 0;
-    const iv = setInterval(() => {
+    let iv = setInterval(() => {
       p = Math.min(p + 3, 85);
       document.getElementById('progFill').style.width = p + '%';
       document.getElementById('progPct').textContent = Math.round(p) + '%';
@@ -364,30 +486,141 @@
     fd.append('weapon_conf_threshold', document.getElementById('weaponSlider').value);
     fd.append('fire_conf',   document.getElementById('fireSlider').value);
     fd.append('road_conf',   document.getElementById('roadSlider').value);
+    fd.append('vehicle_conf', document.getElementById('vehicleSlider').value);
     fd.append('anomaly_alert',     document.getElementById('anomalySlider').value);
 
     try {
       document.getElementById('progStatus').textContent = 'Running AI inference...';
-      const resp = await fetch(`${API}/upload`, { method: 'POST', body: fd });
-      clearInterval(iv);
+      try {
+        const resp = await fetch(`${API}/upload`, { method: 'POST', body: fd });
+        if (!resp.ok) {
+          if (iv) {
+            clearInterval(iv);
+            iv = null;
+          }
+          showError(`HTTP Error: ${resp.statusText}`);
+          return;
+        }
 
-      if (!resp.ok) {
-        const err = await resp.json();
-        showError(err.detail || resp.statusText);
-        return;
+        const contentType = (resp.headers.get('content-type') || '').toLowerCase();
+        let finalData = null;
+
+        // Image uploads return regular JSON, videos return NDJSON stream.
+        if (contentType.includes('application/json')) {
+          const body = await resp.json();
+          if (body.error) {
+            if (iv) {
+              clearInterval(iv);
+              iv = null;
+            }
+            showError(body.error);
+            return;
+          }
+          finalData = body;
+        } else {
+          const reader = resp.body.getReader();
+          const decoder = new TextDecoder("utf-8");
+          let buffer = "";
+
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            let parts = buffer.split("\n");
+            buffer = parts.pop(); // keep last partial chunk
+
+            for (const line of parts) {
+              if (!line.trim()) continue;
+              try {
+                const chunk = JSON.parse(line);
+
+                if (chunk.error) {
+                  if (iv) {
+                    clearInterval(iv);
+                    iv = null;
+                  }
+                  showError(chunk.error);
+                  return;
+                }
+
+                if (chunk.progress !== undefined) {
+                  if (iv) {
+                    clearInterval(iv);
+                    iv = null;
+                  }
+                  document.getElementById('progFill').style.width = chunk.progress + '%';
+                  document.getElementById('progPct').textContent = chunk.progress + '%';
+                  document.getElementById('progStatus').textContent = 'AI Processing... ' + chunk.progress + '%';
+
+                  if (chunk.frame_b64) {
+                    const preview = document.getElementById('livePreview');
+                    preview.src = chunk.frame_b64;
+                    preview.style.display = "block";
+                  }
+                }
+
+                if (chunk.result) {
+                  finalData = chunk.result;
+                }
+              } catch (e) {
+                console.error("Parse err", line, e);
+              }
+            }
+          }
+
+          // Parse any trailing line left in buffer.
+          if (buffer.trim()) {
+            try {
+              const tail = JSON.parse(buffer.trim());
+              if (tail.error) {
+                if (iv) {
+                  clearInterval(iv);
+                  iv = null;
+                }
+                showError(tail.error);
+                return;
+              }
+              if (tail.result) {
+                finalData = tail.result;
+              }
+            } catch (e) {
+              console.error('Trailing parse err', buffer, e);
+            }
+          }
+        }
+        
+        if (iv) {
+          clearInterval(iv);
+          iv = null;
+        }
+
+        // Fill progress to 100%
+        document.getElementById('progFill').style.width = '100%';
+        document.getElementById('progPct').textContent = '100%';
+        document.getElementById('progStatus').textContent = 'Analysis complete.';
+
+        if (!finalData || !finalData.frame_b64) {
+          showError('No frames analyzed. Check video content.');
+          return;
+        }
+
+        setTimeout(() => showResults(finalData, file.name), 300);
+
+      } catch(e) {
+        if (iv) {
+          clearInterval(iv);
+          iv = null;
+        }
+        showError(`Inference failed: ${e.message}`);
       }
-
-      // Fill progress to 100%
-      document.getElementById('progFill').style.width = '100%';
-      document.getElementById('progPct').textContent = '100%';
-      document.getElementById('progStatus').textContent = 'Analysis complete';
-
-      const data = await resp.json();
-      setTimeout(() => showResults(data, file.name), 300);
-
     } catch(e) {
-      clearInterval(iv);
-      showError('Cannot reach API server. Make sure it is running on port 8000.');
+      if (iv) {
+        clearInterval(iv);
+        iv = null;
+      }
+      console.error('Upload error details:', e);
+      showError(`Inference failed on port ${window.location.port || '8000'}: ${e.message || 'Check browser console.'}`);
     }
   }
 
@@ -399,13 +632,13 @@
       d.media_type === 'video' ? 'Video analysis result' : 'Image analysis result';
     document.getElementById('rFrameMeta').textContent =
       d.media_type === 'video'
-        ? `${d.total_frames} frames · ${d.duration_seconds}s · worst frame #${d.worst_frame}`
+        ? `${d.total_frames || 0} frames · ${d.duration_seconds || 0}s`
         : filename;
-    document.getElementById('rCameraLabel').textContent = `${d.camera} · ${filename}`;
+    document.getElementById('rCameraLabel').textContent = `${d.camera || 'CCTV'} · ${filename}`;
     document.getElementById('rStatusLabel').textContent =
       d.has_threat || d.has_fire ? '⚠ Threat detected' : '✓ Analysis complete';
 
-    // ── Show the annotated frame image ──
+    // Show the annotated frame image
     const img = document.getElementById('frameImg');
     const placeholder = document.getElementById('framePlaceholder');
     if (d.frame_b64 && d.frame_b64.length > 0) {
@@ -423,7 +656,7 @@
     ts.textContent = (d.has_threat || d.has_fire) ? 'Threat detected' : 'Secure';
     ts.className = 'badge ' + ((d.has_threat || d.has_fire) ? 'threat' : 'safe');
 
-    document.getElementById('rDetections').textContent = `${d.total_detections} object(s)`;
+    document.getElementById('rDetections').textContent = `${d.total_detections || 0} object(s)`;
     document.getElementById('rWeaponConf').textContent =
       d.weapon_conf > 0 ? d.weapon_conf.toFixed(2) : '0.00';
     document.getElementById('rFireConf').textContent =
@@ -433,16 +666,16 @@
     document.getElementById('rAnomalyScore').textContent =
       (d.anomaly_score > 0) ? d.anomaly_score.toFixed(1) + '%' : '—';
     document.getElementById('rScene').textContent =
-      d.scene_label && d.scene_label !== '—' ? d.scene_label : '—';
+      d.scene_description && d.scene_description !== '—' ? d.scene_description : '—';
 
     // Alert banners
     const banners = document.getElementById('alertBanners');
     banners.innerHTML = '';
-    if (d.has_threat) {
+    if (d.has_threat || (d.threat_types && d.threat_types.length > 0)) {
       banners.innerHTML += `
         <div class="alert-banner weapon-alert" style="margin:0 18px 8px;">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-          <div><div class="banner-title">Weapon detected</div><div class="banner-sub">Confidence: ${d.weapon_conf.toFixed(2)}</div></div>
+          <div><div class="banner-title">${d.threat_types ? d.threat_types.join(', ') : 'Threat detected'}</div><div class="banner-sub">Confidence: ${(d.weapon_conf || d.fire_conf || d.road_conf || 0).toFixed(2)}</div></div>
         </div>`;
     }
     if (d.has_fire) {
@@ -468,6 +701,9 @@
   function triggerDispatch() {
     alert('Emergency dispatch triggered. In production this calls dispatch_authorities() via the API.');
   }
+
+  loadSystemState();
+  setInterval(loadSystemState, 12000);
 </script>
 </body>
 </html>

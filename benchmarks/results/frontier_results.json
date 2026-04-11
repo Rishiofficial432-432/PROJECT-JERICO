@@ -1,0 +1,215 @@
+{
+  "suite": "Jerico Frontier Validation Suite",
+  "timestamp_utc": "2026-04-11T09:14:15.759276+00:00",
+  "results": [
+    {
+      "adapter": "jerico-baseline-2024-style",
+      "pass_count": 0,
+      "total_cases": 5,
+      "pass_rate": 0.0,
+      "aggregate": {
+        "category_scores": {
+          "reasoning": 0.5,
+          "open_vocabulary": 0.5,
+          "latency": 0.0,
+          "spatial": 0.0,
+          "tracking": 0.0
+        }
+      },
+      "cases": [
+        {
+          "case_id": "T1_INTENT_IDENTITY",
+          "passed": false,
+          "score": 0.5,
+          "observed": {
+            "predictions": [
+              {
+                "sample": "A_technician",
+                "severity": "CRITICAL",
+                "hits": [
+                  "restricted",
+                  "metallic"
+                ]
+              },
+              {
+                "sample": "B_intruder",
+                "severity": "CRITICAL",
+                "hits": [
+                  "balaclava",
+                  "restricted",
+                  "hoodie",
+                  "crowbar",
+                  "metallic"
+                ]
+              }
+            ],
+            "accuracy": 0.5
+          },
+          "expected": {
+            "per_sample_severity": {
+              "A_technician": "LOW",
+              "B_intruder": "CRITICAL"
+            },
+            "min_accuracy": 1.0
+          },
+          "notes": "Baseline keyword scoring tends to over-flag authorized scenarios."
+        },
+        {
+          "case_id": "T2_ZERO_SHOT_OPEN_VOCAB",
+          "passed": false,
+          "score": 0.5,
+          "observed": {
+            "detections": [
+              {
+                "concept": "unattended lithium-ion battery pack",
+                "detected": false
+              },
+              {
+                "concept": "person wielding machete",
+                "detected": true
+              }
+            ],
+            "recall": 0.5
+          },
+          "expected": {
+            "min_recall": 0.75
+          },
+          "notes": "Baseline fixed-class design misses novel text-defined concepts."
+        },
+        {
+          "case_id": "T3_NMS_FREE_LATENCY",
+          "passed": false,
+          "score": 0.0,
+          "observed": {
+            "mean_latency_ms": 2.3317,
+            "std_latency_ms": 0.0956,
+            "variance_ratio": 0.041,
+            "per_count_mean_ms": {
+              "10": 2.2298,
+              "25": 2.2857,
+              "50": 2.366,
+              "80": 2.4451
+            }
+          },
+          "expected": {
+            "target_mean_latency_ms": 1.5,
+            "max_variance_ratio": 0.03
+          },
+          "notes": "Baseline simulation includes density-sensitive post-processing cost."
+        },
+        {
+          "case_id": "T4_3D_PROXIMITY",
+          "passed": false,
+          "score": 0.0,
+          "observed": {
+            "predicted_label": "ARMED_PERSON",
+            "distance_2d_px": 73.53,
+            "person_depth": 7.0,
+            "weapon_depth": 2.0,
+            "depth_delta": 5.0
+          },
+          "expected": {
+            "label": "NO_ARMED_LINK"
+          },
+          "notes": "2D proximity logic can fire despite large Z-axis separation."
+        },
+        {
+          "case_id": "T5_TEMPORAL_IDENTITY",
+          "passed": false,
+          "score": 0.0,
+          "observed": {
+            "occlusion_seconds": 3.0,
+            "tolerated_seconds": 0.4,
+            "identity_preserved": false
+          },
+          "expected": {
+            "require_identity_lock": true
+          },
+          "notes": "Centroid-style tracking likely drops identity for long full occlusions."
+        }
+      ]
+    },
+    {
+      "adapter": "frontier-2026-placeholder",
+      "pass_count": 0,
+      "total_cases": 5,
+      "pass_rate": 0.0,
+      "aggregate": {
+        "category_scores": {
+          "reasoning": 0.0,
+          "open_vocabulary": 0.0,
+          "latency": 0.0,
+          "spatial": 0.0,
+          "tracking": 0.0
+        }
+      },
+      "cases": [
+        {
+          "case_id": "T1_INTENT_IDENTITY",
+          "passed": false,
+          "score": 0.0,
+          "observed": {
+            "status": "not_implemented"
+          },
+          "expected": {
+            "per_sample_severity": {
+              "A_technician": "LOW",
+              "B_intruder": "CRITICAL"
+            },
+            "min_accuracy": 1.0
+          },
+          "notes": "Implement this adapter to benchmark upgraded modules."
+        },
+        {
+          "case_id": "T2_ZERO_SHOT_OPEN_VOCAB",
+          "passed": false,
+          "score": 0.0,
+          "observed": {
+            "status": "not_implemented"
+          },
+          "expected": {
+            "min_recall": 0.75
+          },
+          "notes": "Implement this adapter to benchmark upgraded modules."
+        },
+        {
+          "case_id": "T3_NMS_FREE_LATENCY",
+          "passed": false,
+          "score": 0.0,
+          "observed": {
+            "status": "not_implemented"
+          },
+          "expected": {
+            "target_mean_latency_ms": 1.5,
+            "max_variance_ratio": 0.03
+          },
+          "notes": "Implement this adapter to benchmark upgraded modules."
+        },
+        {
+          "case_id": "T4_3D_PROXIMITY",
+          "passed": false,
+          "score": 0.0,
+          "observed": {
+            "status": "not_implemented"
+          },
+          "expected": {
+            "label": "NO_ARMED_LINK"
+          },
+          "notes": "Implement this adapter to benchmark upgraded modules."
+        },
+        {
+          "case_id": "T5_TEMPORAL_IDENTITY",
+          "passed": false,
+          "score": 0.0,
+          "observed": {
+            "status": "not_implemented"
+          },
+          "expected": {
+            "require_identity_lock": true
+          },
+          "notes": "Implement this adapter to benchmark upgraded modules."
+        }
+      ]
+    }
+  ]
+}

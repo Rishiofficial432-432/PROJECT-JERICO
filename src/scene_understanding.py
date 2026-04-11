@@ -1,105 +1,219 @@
 """
-Scene understanding using OpenAI CLIP (openai/CLIP package).
-Uses openai-clip directly — does NOT require transformers, avoids PyTorch >= 2.4 restriction.
+Causal scene understanding and reasoning firewall for Jerico.
 
-Install: pip install git+https://github.com/openai/CLIP.git
+Primary path:
+- Gemini 3.1 Pro API for structured causal reasoning and timestamp correction.
+
+Fallback path:
+- Lightweight local caption heuristic for graceful degradation when API/key is missing.
 """
 
+import io
+import json
 import logging
+import os
+import importlib
+from typing import Any, Dict, List, Tuple
+
 import cv2
-import numpy as np
 from PIL import Image
 
 logger = logging.getLogger(__name__)
 
-# ── Try openai/clip first (works with torch 2.2.x) ──────────────────────────
 try:
-    import torch
-    import clip as _clip                         # openai/CLIP package
-    _CLIP_AVAILABLE = True
-except Exception as e:
-    logger.warning(f"openai-clip not available: {e}")
-    _CLIP_AVAILABLE = False
-    _clip = None
-
-# ── Scene label categories ───────────────────────────────────────────────────
-_CATEGORIES = [
-    "a person looking around suspiciously and nervously",
-    "a person hiding their face with a mask, hoodie, or hand",
-    "a violent street fight, physical assault, or shoving",
-    "an armed robbery, theft, or burglary in progress",
-    "a person holding a knife, gun, or dangerous weapon",
-    "a person casing a building or checking door handles",
-    "a person running away in a state of panic or guilt",
-    "a person loitering, crouching, or lurking in shadows",
-    "normal peaceful street or room environment with calm people",
-    "people walking, talking, and interacting normally",
-]
+    dotenv_mod = importlib.import_module("dotenv")
+    dotenv_mod.load_dotenv()
+except Exception:
+    pass
 
 
 class SceneAnalyzer:
-    """
-    Zero-shot scene classifier using CLIP.
-    Returns (label_string, confidence_float) for every frame.
-    """
-
     def __init__(self):
         self._ready = False
-        self._warned_once = False
+        self._reasoner = None
+        self._model_name = os.getenv("GEMINI_MODEL", "gemini-3.1-pro-preview")
 
-        if not _CLIP_AVAILABLE:
-            logger.warning("SceneAnalyzer: openai-clip not installed. Scene labels will be unavailable.")
+        self.threat_keywords = [
+            "weapon", "gun", "knife", "fight", "attack", "robbery", "assault",
+            "threat", "armed", "violent", "suspicious", "hiding", "running", "panic", "fire"
+        ]
+
+        self._init_gemini()
+
+    def _init_gemini(self) -> None:
+        api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+        if not api_key:
+            logger.warning("SceneAnalyzer: GEMINI_API_KEY/GOOGLE_API_KEY not set. Running in fallback mode.")
             return
 
         try:
-            self.device = "cuda" if torch.cuda.is_available() else "cpu"
-            self.model, self.preprocess = _clip.load("ViT-B/32", device=self.device)
-            self.model.eval()
+            genai = importlib.import_module("google.generativeai")
 
-            # Pre-encode text tokens (done once at init — fast at inference time)
-            tokens = _clip.tokenize(_CATEGORIES).to(self.device)
-            with torch.no_grad():
-                self._text_feats = self.model.encode_text(tokens)
-                self._text_feats /= self._text_feats.norm(dim=-1, keepdim=True)
-
-            self.categories = _CATEGORIES
+            genai.configure(api_key=api_key)
+            self._reasoner = genai.GenerativeModel(self._model_name)
             self._ready = True
-            logger.info("SceneAnalyzer: CLIP ViT-B/32 loaded successfully ✅")
-
+            logger.info(f"SceneAnalyzer: Gemini reasoning firewall ready ✅ ({self._model_name})")
         except Exception as e:
-            logger.error(f"SceneAnalyzer: failed to load CLIP — {e}")
+            logger.error(f"SceneAnalyzer: failed to initialize Gemini model: {e}")
+            self._reasoner = None
+            self._ready = False
 
-    # ─────────────────────────────────────────────────────────────────────────
+    @staticmethod
+    def _frame_to_pil(frame) -> Image.Image:
+        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        return Image.fromarray(rgb)
 
-    def analyze_frame(self, frame: np.ndarray) -> tuple[str, float]:
-        """
-        Classify a BGR OpenCV frame.
-        Returns (scene_label, confidence) or ('—', 0.0) if unavailable.
-        """
-        if not self._ready:
-            if not self._warned_once:
-                logger.warning("SceneAnalyzer not ready — skipping scene label.")
-                self._warned_once = True
-            return "—", 0.0
+    @staticmethod
+    def _extract_json(raw_text: str) -> Dict[str, Any]:
+        if not raw_text:
+            return {}
+        text = raw_text.strip()
+        if text.startswith("```"):
+            text = text.strip("`")
+            text = text.replace("json\n", "", 1).strip()
 
         try:
-            # Convert BGR → PIL RGB
+            return json.loads(text)
+        except Exception:
+            # Attempt relaxed extraction if the model wraps JSON in prose.
+            start = text.find("{")
+            end = text.rfind("}")
+            if start != -1 and end != -1 and end > start:
+                try:
+                    return json.loads(text[start:end + 1])
+                except Exception:
+                    return {}
+            return {}
+
+    def _generate_reasoning(self, parts: List[Any], prompt: str) -> str:
+        if not self._reasoner:
+            return ""
+
+        # Try thinking-level config first; fallback if unsupported by SDK version.
+        try:
+            resp = self._reasoner.generate_content(
+                parts + [prompt],
+                generation_config={
+                    "response_mime_type": "application/json",
+                    "temperature": 0.2,
+                    "thinking_level": "high",
+                },
+            )
+            return getattr(resp, "text", "") or ""
+        except Exception:
+            try:
+                resp = self._reasoner.generate_content(
+                    parts + [prompt],
+                    generation_config={
+                        "response_mime_type": "application/json",
+                        "temperature": 0.2,
+                    },
+                )
+                return getattr(resp, "text", "") or ""
+            except Exception as e:
+                logger.error(f"SceneAnalyzer: Gemini generation failed: {e}")
+                return ""
+
+    def validate_threat_reasoning(self, video_segment: List[Any], detected_timestamp: str) -> Dict[str, Any]:
+        """
+        Run causal reasoning for a short, temporally anchored segment.
+
+        Returns a dict with keys:
+        - is_fire
+        - is_accident
+        - corrected_timestamp
+        - reasoning
+        - hazards
+        """
+        if not self._ready:
+            return {
+                "is_fire": False,
+                "is_accident": False,
+                "corrected_timestamp": detected_timestamp,
+                "reasoning": "Gemini not configured; fallback mode active.",
+                "hazards": [],
+            }
+
+        prompt = f"""
+ANALYSIS TASK: Evaluate the incident at {detected_timestamp} in the provided video frames.
+
+THINKING PROTOCOL:
+1. Check RED color vs FIRE physics: solid geometry and rigid motion vs flickering volumetric expansion.
+2. TEMPORAL ANCHOR: Use burned corner timestamps to report the exact second of impact.
+3. SPATIAL GROUNDING: Report hazard boxes in [ymin, xmin, ymax, xmax].
+
+RESPONSE SCHEMA (JSON only):
+{{
+  "is_fire": boolean,
+  "is_accident": boolean,
+  "corrected_timestamp": "MM:SS.ms",
+  "reasoning": "string",
+  "hazards": [{{"box_2d": [ymin, xmin, ymax, xmax], "label": "string"}}]
+}}
+""".strip()
+
+        parts = []
+        for item in video_segment:
+            if isinstance(item, Image.Image):
+                parts.append(item)
+            else:
+                try:
+                    parts.append(self._frame_to_pil(item))
+                except Exception:
+                    continue
+
+        raw = self._generate_reasoning(parts, prompt)
+        data = self._extract_json(raw)
+        if not data:
+            return {
+                "is_fire": False,
+                "is_accident": False,
+                "corrected_timestamp": detected_timestamp,
+                "reasoning": "Reasoning parse failed; keeping detected timestamp.",
+                "hazards": [],
+            }
+
+        data.setdefault("is_fire", False)
+        data.setdefault("is_accident", False)
+        data.setdefault("corrected_timestamp", detected_timestamp)
+        data.setdefault("reasoning", "Reasoning response received.")
+        data.setdefault("hazards", [])
+        return data
+
+    def analyze_frame(self, frame) -> Tuple[str, float]:
+        """
+        Lightweight per-frame scene summary.
+        Keeps API compatibility with existing upload flow.
+        """
+        try:
+            # If Gemini is ready, use a compact causal frame summary.
+            if self._ready and self._reasoner:
+                image = self._frame_to_pil(frame)
+                prompt = (
+                    "Return compact JSON: "
+                    "{\"scene\": string, \"threat_score\": number[0..1], \"notes\": string}. "
+                    "Distinguish red object color from actual flame physics."
+                )
+                raw = self._generate_reasoning([image], prompt)
+                data = self._extract_json(raw)
+                if data:
+                    scene = str(data.get("scene", "scene_analysis"))
+                    score = float(data.get("threat_score", 0.0))
+                    return scene, max(0.0, min(score, 1.0))
+
+            # Fallback local heuristic.
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            pil_img = Image.fromarray(rgb)
-
-            # Preprocess + encode image
-            img_tensor = self.preprocess(pil_img).unsqueeze(0).to(self.device)
-            with torch.no_grad():
-                img_feat = self.model.encode_image(img_tensor)
-                img_feat /= img_feat.norm(dim=-1, keepdim=True)
-
-            # Cosine similarity → softmax probabilities
-            logits = (img_feat @ self._text_feats.T) * self.model.logit_scale.exp()
-            probs = logits.softmax(dim=-1).detach().cpu().numpy()[0]
-
-            best_idx = int(probs.argmax())
-            return self.categories[best_idx], float(probs[best_idx])
-
+            hsv = cv2.cvtColor(rgb, cv2.COLOR_RGB2HSV)
+            # Very coarse hot-color ratio proxy.
+            lower1 = (0, 120, 120)
+            upper1 = (20, 255, 255)
+            lower2 = (160, 120, 120)
+            upper2 = (179, 255, 255)
+            m1 = cv2.inRange(hsv, lower1, upper1)
+            m2 = cv2.inRange(hsv, lower2, upper2)
+            hot_ratio = float((m1.sum() + m2.sum()) / max(1, hsv.shape[0] * hsv.shape[1] * 255))
+            desc = "scene_fallback_hotcolor" if hot_ratio > 0.08 else "scene_fallback_normal"
+            return desc, min(1.0, hot_ratio * 2.0)
         except Exception as e:
-            logger.error(f"SceneAnalyzer.analyze_frame error: {e}")
+            logger.error(f"SceneAnalyzer error: {e}")
             return "analysis_error", 0.0
